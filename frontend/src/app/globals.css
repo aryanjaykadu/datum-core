@@ -328,3 +328,15 @@ select option { background: #16181e; }
 .crash-card pre { white-space: pre-wrap; font-size: 11px; color: var(--fail); background: rgba(0, 0, 0, 0.3); padding: 8px; border-radius: 8px; max-height: 160px; overflow: auto; }
 
 .file-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-dim); direction: rtl; text-align: left; }
+
+.viewcube { position: absolute; right: calc(var(--inspector-w) + 18px); top: 200px; transition: right var(--spring-panel-ms) var(--spring-panel); width: 96px; height: 96px; z-index: 5; filter: drop-shadow(0 4px 10px rgba(0,0,0,.35)); }
+.vc-face { cursor: pointer; }
+.vc-face polygon { fill: var(--panel, #1c2230); stroke: var(--teal, #2dd4bf); stroke-width: 1; transition: fill .15s; }
+.vc-face:hover polygon { fill: var(--teal, #2dd4bf); }
+.vc-face text { fill: var(--text, #e6edf3); font-weight: 600; letter-spacing: .04em; pointer-events: none; }
+.vc-face:hover text { fill: #071a17; }
+
+.dfm-legend { position: absolute; right: calc(var(--inspector-w) + 18px); bottom: calc(var(--dock-h) + 52px); padding: 10px 12px; border-radius: 10px; display: grid; gap: 5px; font-size: 12px; z-index: 5; }
+.dfm-legend b { font-weight: 600; margin-bottom: 2px; }
+.dfm-legend span { display: flex; align-items: center; gap: 8px; }
+.dfm-legend i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }

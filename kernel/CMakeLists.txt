@@ -8,7 +8,7 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
 endif()
 
-add_library(dk STATIC src/expr.cpp src/shapes.cpp src/mesh.cpp src/bricks.cpp src/document.cpp src/analysis.cpp src/robot.cpp src/sketch.cpp src/meshfield.cpp)
+add_library(dk STATIC src/expr.cpp src/shapes.cpp src/mesh.cpp src/bricks.cpp src/document.cpp src/analysis.cpp src/robot.cpp src/sketch.cpp src/meshfield.cpp src/parts.cpp)
 target_include_directories(dk PUBLIC include)
 target_compile_options(dk PRIVATE -Wall -Wextra)
 

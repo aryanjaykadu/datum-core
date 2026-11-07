@@ -7,7 +7,7 @@
 namespace dk {
 
 const char* op_name(Op op) {
-    static const char* names[] = {"x", "y", "z", "const", "add", "sub", "mul", "div", "neg", "min", "max", "abs", "sqrt", "square", "sin", "cos", "copysign", "grid"};
+    static const char* names[] = {"x", "y", "z", "const", "add", "sub", "mul", "div", "neg", "min", "max", "abs", "sqrt", "square", "sin", "cos", "copysign", "grid", "atan2", "floor"};
     return names[static_cast<int>(op)];
 }
 
@@ -48,6 +48,7 @@ Expr Graph::unary(Op op, Expr a) {
             case Op::Square: return constant(v * v);
             case Op::Sin: return constant(std::sin(v));
             case Op::Cos: return constant(std::cos(v));
+            case Op::Floor: return constant(std::floor(v));
             default: break;
         }
     }
@@ -66,6 +67,7 @@ Expr Graph::binary(Op op, Expr a, Expr b) {
             case Op::Div: return constant(va / vb);
             case Op::Min: return constant(std::min(va, vb));
             case Op::Max: return constant(std::max(va, vb));
+            case Op::Atan2: return constant(std::atan2(va, vb));
             case Op::CopySign: return constant(vb < 0 ? -std::abs(va) : std::abs(va));
             default: break;
         }
@@ -108,6 +110,8 @@ Expr sqrt(Expr a) { return a.graph()->unary(Op::Sqrt, a); }
 Expr square(Expr a) { return a.graph()->unary(Op::Square, a); }
 Expr sin(Expr a) { return a.graph()->unary(Op::Sin, a); }
 Expr cos(Expr a) { return a.graph()->unary(Op::Cos, a); }
+Expr atan2(Expr y, Expr x) { return graph_of(y, x)->binary(Op::Atan2, y, x); }
+Expr floor(Expr a) { return a.graph()->unary(Op::Floor, a); }
 Expr copysign(Expr m, Expr s) { return graph_of(m, s)->binary(Op::CopySign, m, s); }
 Expr Graph::grid(int id, Expr x, Expr y, Expr z) { return add({Op::Grid, x.id(), y.id(), double(id), z.id()}); }
 Expr sample_grid(int id, Expr x, Expr y, Expr z) {

@@ -88,6 +88,8 @@ fn eval_program(p: vec3f, off: u32, len: u32) -> f32 {
       case 14u: { v = sin(s[ins.a]); }
       case 15u: { v = cos(s[ins.a]); }
       case 16u: { v = select(abs(s[ins.a]), -abs(s[ins.a]), s[ins.b] < 0.0); }
+      case 18u: { v = atan2(s[ins.a], s[ins.b]); }
+      case 19u: { v = floor(s[ins.a]); }
       case 17u: { v = grid_sample(ins.op >> 24u, vec3f(s[ins.a], s[ins.b], s[u32(ins.c)])); }
       default: { v = 0.0; }
     }
@@ -260,6 +262,28 @@ fn fs(@builtin(position) frag: vec4f) -> FOut {
   return FOut(c, g_depth);
 }
 
+// Design-for-manufacture view: wall thickness probed along the inward normal, plus
+// downward faces steeper than 45 deg that would need support when printed (z up).
+fn dfm(p: vec3f, n: vec3f, v: vec3f, key: vec3f) -> vec3f {
+  var thick = 4.0;
+  for (var k = 1; k <= 8; k++) {
+    let t = f32(k) * 0.5;
+    if (part(p - n * t) > 0.0) { thick = t; break; }
+  }
+  let red = vec3f(0.95, 0.20, 0.18);
+  let amber = vec3f(0.98, 0.70, 0.18);
+  let green = vec3f(0.18, 0.78, 0.48);
+  var c = select(green, amber, thick <= 1.5);
+  c = select(c, red, thick <= 0.5);
+  let overhang = n.z < -0.7071 && p.z > U.view.w + 0.02 * U.hi.w;
+  if (overhang) {
+    let stripe = step(0.5, fract((p.x + p.y) / (0.04 * U.hi.w)));
+    c = mix(c, vec3f(0.62, 0.32, 0.95), 0.55 + 0.35 * stripe);
+  }
+  let light = 0.35 + 0.65 * max(dot(n, key), 0.0) + 0.15 * pow(1.0 - abs(dot(n, v)), 2.0);
+  return pow(c * light, vec3f(1.0 / 2.2));
+}
+
 fn shade(frag: vec4f) -> vec4f {
   let ray = camera_ray(frag.xy);
   let ro = ray[0];
@@ -288,6 +312,7 @@ fn shade(frag: vec4f) -> vec4f {
       let fx = pow(1.0 - abs(dot(n, v)), 2.5);
       return vec4f(pow(mix(vec3f(0.02, 0.05, 0.06), vec3f(0.0, 1.0, 0.85), fx), vec3f(1.0 / 2.2)), 1.0);
     }
+    if (U.view.z == 4.0) { return vec4f(dfm(p, n, v, key), 1.0); }
     var base = vec3f(0.90, 0.91, 0.92);  // bead-blasted aluminium
     var metal = 0.9;
     var rough = 0.34;

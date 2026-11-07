@@ -82,6 +82,15 @@ inline Interval copysign(Interval mag, Interval sign) {
     return {-m.hi, m.hi};
 }
 
+inline Interval floor(Interval a) { return {std::floor(a.lo), std::floor(a.hi)}; }
+// atan2 over a box: exact at the corners unless the box touches the origin or the branch cut
+inline Interval atan2(Interval y, Interval x) {
+    constexpr double pi = std::numbers::pi;
+    if (x.lo <= 0 && y.lo <= 0 && y.hi >= 0) return {-pi, pi};
+    double c[4] = {std::atan2(y.lo, x.lo), std::atan2(y.lo, x.hi), std::atan2(y.hi, x.lo), std::atan2(y.hi, x.hi)};
+    return {std::min({c[0], c[1], c[2], c[3]}), std::max({c[0], c[1], c[2], c[3]})};
+}
+
 // ---------------------------------------------------------------- Dual3
 struct Dual3 {
     double v = 0;
@@ -105,6 +114,11 @@ inline Dual3 sqrt(Dual3 a) {
 }
 inline Dual3 sin(Dual3 a) { return {std::sin(a.v), a.d * std::cos(a.v)}; }
 inline Dual3 cos(Dual3 a) { return {std::cos(a.v), a.d * -std::sin(a.v)}; }
+inline Dual3 floor(Dual3 a) { return {std::floor(a.v)}; }
+inline Dual3 atan2(Dual3 y, Dual3 x) {
+    double r2 = x.v * x.v + y.v * y.v;
+    return {std::atan2(y.v, x.v), r2 > 0 ? (y.d * x.v - x.d * y.v) * (1.0 / r2) : Vec3{}};
+}
 inline Dual3 copysign(Dual3 mag, Dual3 sign) {
     double s = sign.v < 0 ? -1.0 : 1.0;
     Dual3 m = abs(mag);
@@ -112,6 +126,8 @@ inline Dual3 copysign(Dual3 mag, Dual3 sign) {
 }
 
 using std::abs;
+using std::atan2;
+using std::floor;
 using std::cos;
 using std::sin;
 using std::sqrt;

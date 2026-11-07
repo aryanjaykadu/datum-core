@@ -18,12 +18,12 @@
 namespace dk {
 
 // Opcode values are part of the GPU bytecode: append new ops, never reorder.
-enum class Op : uint8_t { X, Y, Z, Const, Add, Sub, Mul, Div, Neg, Min, Max, Abs, Sqrt, Square, Sin, Cos, CopySign, Grid };
+enum class Op : uint8_t { X, Y, Z, Const, Add, Sub, Mul, Div, Neg, Min, Max, Abs, Sqrt, Square, Sin, Cos, CopySign, Grid, Atan2, Floor };  // append only: the GPU decodes these numbers
 
 constexpr int arity(Op op) {
     switch (op) {
         case Op::X: case Op::Y: case Op::Z: case Op::Const: return 0;
-        case Op::Neg: case Op::Abs: case Op::Sqrt: case Op::Square: case Op::Sin: case Op::Cos: return 1;
+        case Op::Neg: case Op::Abs: case Op::Sqrt: case Op::Square: case Op::Sin: case Op::Cos: case Op::Floor: return 1;
         case Op::Grid: return 3;  // sample point x, y, z; c = grid id
         default: return 2;
     }
@@ -95,6 +95,8 @@ Expr sqrt(Expr a);
 Expr square(Expr a);
 Expr sin(Expr a);
 Expr cos(Expr a);
+Expr atan2(Expr y, Expr x);               // angle of (x, y) in (-pi, pi]
+Expr floor(Expr a);
 Expr copysign(Expr magnitude, Expr sign);  // |magnitude| with the sign of `sign`
 Expr sample_grid(int id, Expr x, Expr y, Expr z);  // trilinear signed-distance grid
 
@@ -160,6 +162,8 @@ T Program::eval(const T& x, const T& y, const T& z, std::vector<T>& s) const {
             case Op::Sin: s[i] = sin(s[in.a]); break;
             case Op::Cos: s[i] = cos(s[in.a]); break;
             case Op::CopySign: s[i] = copysign(s[in.a], s[in.b]); break;
+            case Op::Atan2: s[i] = atan2(s[in.a], s[in.b]); break;
+            case Op::Floor: s[i] = floor(s[in.a]); break;
             case Op::Grid: s[i] = grid_eval(int(in.c), s[in.a], s[in.b], s[in.d]); break;
         }
     }

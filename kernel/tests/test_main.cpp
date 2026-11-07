@@ -12,6 +12,7 @@
 #include "dk/mesh.hpp"
 #include "dk/robot.hpp"
 #include "dk/meshfield.hpp"
+#include "dk/parts.hpp"
 #include "dk/sketch.hpp"
 #include "dk/shapes.hpp"
 
@@ -227,6 +228,8 @@ TEST(register_allocated_bricks_match_the_program) {
                     case Op::Square: v = a * a; break;
                     case Op::Sin: v = std::sin(a); break;
                     case Op::Cos: v = std::cos(a); break;
+                    case Op::Atan2: v = std::atan2(a, c); break;
+                    case Op::Floor: v = std::floor(a); break;
                     case Op::CopySign: v = c < 0 ? -std::abs(a) : std::abs(a); break;
                     case Op::Grid: v = grid_eval(int(in.c), a, c, s[in.d]); break;
                 }
@@ -509,6 +512,96 @@ TEST(complex_part_meshes_watertight) {
     // DC can join two sheets through one cell vertex (thin lattice walls); report, keep rare
     CHECK(t.nonmanifold_edges * 1000 < m.triangles.size(), "nonmanifold %zu of %zu tris", t.nonmanifold_edges, m.triangles.size());
     std::printf("  part: %zu tris, %zu leaves, program %zu -> avg %.1f instrs, %.2fs\n", m.triangles.size(), st.leaves, st.full_size, st.avg_pruned_size, st.seconds);
+}
+
+TEST(interval_atan2_floor_bound_samples) {
+    std::mt19937 rng(11);
+    std::uniform_real_distribution<double> u(-5, 5), w(0, 3);
+    for (int n = 0; n < 4000; ++n) {
+        double x0 = u(rng), y0 = u(rng), x1 = x0 + w(rng), y1 = y0 + w(rng);
+        Interval a = atan2(Interval{y0, y1}, Interval{x0, x1}), f = floor(Interval{x0, x1});
+        for (int k = 0; k < 6; ++k) {
+            double x = x0 + (x1 - x0) * k / 5.0, y = y1 - (y1 - y0) * k / 5.0;
+            double t = std::atan2(y, x);
+            CHECK(a.lo - 1e-12 <= t && t <= a.hi + 1e-12, "atan2 [%g,%g]x[%g,%g]", x0, x1, y0, y1);
+            CHECK(f.lo <= std::floor(x) && std::floor(x) <= f.hi, "floor");
+        }
+    }
+    Dual3 d = atan2(Dual3(2, {0, 1, 0}), Dual3(1, {1, 0, 0}));  // d/dx atan2(y, x) = -y / r2, d/dy = x / r2
+    CHECK(std::abs(d.d.x + 0.4) < 1e-12 && std::abs(d.d.y - 0.2) < 1e-12, "atan2 grad %g %g", d.d.x, d.d.y);
+}
+
+// |f(a) - f(b)| <= |a - b| for random nearby pairs: the field never overshoots (safe to trace)
+static double worst_lipschitz(const Program& f, Vec3 lo, Vec3 hi, unsigned seed) {
+    std::mt19937 rng(seed);
+    std::uniform_real_distribution<double> ux(lo.x, hi.x), uy(lo.y, hi.y), uz(lo.z, hi.z), e(-0.3, 0.3);
+    double worst = 0;
+    for (int n = 0; n < 20000; ++n) {
+        Vec3 a{ux(rng), uy(rng), uz(rng)}, b{a.x + e(rng), a.y + e(rng), a.z + e(rng)};
+        double dl = std::sqrt(dot(a - b, a - b));
+        if (dl > 1e-6) worst = std::max(worst, std::abs(f(a) - f(b)) / dl);
+    }
+    return worst;
+}
+
+TEST(spur_gear_has_the_right_size_and_meshes) {
+    Graph g;
+    P3 p = coords(g);
+    const double m = 2, z = 20, rp = m * z / 2;
+    Program gear = compile(spur_gear(p, m, int(z), 20, 10, 8));
+    Mesh mesh = dual_contour(gear, {{-23, -23, -6}, {23, 23, 6}, 0.2});
+    CHECK(topology(mesh).watertight(), "gear mesh closed");
+    // a standard gear's area is close to the pitch disc (teeth and gaps balance), minus the bore
+    double v = mass_properties(mesh).volume_mm3, want = (std::numbers::pi * rp * rp - std::numbers::pi * 16) * 10;
+    CHECK(std::abs(v / want - 1) < 0.05, "gear volume %g vs ~%g", v, want);
+    CHECK(gear({rp + m + 0.5, 0, 0}) > 0 && gear({rp + m - 0.3, 0, 0}) < 0, "tooth tip on +x at the addendum");
+    CHECK(gear({0, 0, 0}) > 0, "bore is open");
+    double L = worst_lipschitz(gear, {-23, -23, -6}, {23, 23, 6}, 4);
+    CHECK(L < 1.05, "gear field Lipschitz %g", L);
+    BrickGrid grid = build_bricks(gear, {-23, -23, -6}, {23, 23, 6}, 8);
+    CHECK(grid.max_registers < 48, "gear registers %zu", grid.max_registers);
+}
+
+TEST(threaded_rod_sits_between_root_and_major) {
+    Graph g;
+    P3 p = coords(g);
+    Program rod = compile(threaded_rod(p, 8, 1.25, 20));
+    Mesh mesh = dual_contour(rod, {{-5, -5, -11}, {5, 5, 11}, 0.08});
+    CHECK(topology(mesh).watertight(), "thread mesh closed");
+    double v = mass_properties(mesh).volume_mm3, h = 0.61343 * 1.25;
+    double vmin = std::numbers::pi * (4 - h) * (4 - h) * 20, vmax = std::numbers::pi * 16 * 20;
+    CHECK(v > vmin && v < vmax, "thread volume %g in (%g, %g)", v, vmin, vmax);
+    double L = worst_lipschitz(rod, {-5, -5, -11}, {5, 5, 11}, 5);
+    CHECK(L < 1.0, "thread field Lipschitz %g", L);
+}
+
+TEST(hole_wizard_removes_the_drilled_volume) {
+    Graph g;
+    P3 p = coords(g);
+    Expr block = box(p, {40, 40, 20});
+    HoleSpec h = metric_hole("M6");
+    P3 top = translate(p, {0, 0, 10});
+    Program simple = compile(subtract(block, hole_cutter(top, h, 8, "simple")));
+    double v = mass_properties(dual_contour(simple, {{-21, -21, -11}, {21, 21, 11}, 0.2})).volume_mm3;
+    double want = 40 * 40 * 20 - std::numbers::pi * 3.3 * 3.3 * 8;
+    CHECK(std::abs(v / want - 1) < 1e-3, "M6 hole volume %g vs %g", v, want);
+    Program cb = compile(subtract(block, hole_cutter(top, h, 8, "counterbore")));
+    double vcb = mass_properties(dual_contour(cb, {{-21, -21, -11}, {21, 21, 11}, 0.2})).volume_mm3;
+    double want_cb = want - std::numbers::pi * (5.5 * 5.5 - 3.3 * 3.3) * 6.5;
+    CHECK(std::abs(vcb / want_cb - 1) < 2e-3, "counterbore volume %g vs %g", vcb, want_cb);
+    Program cs = compile(subtract(block, hole_cutter(top, h, 8, "countersink")));
+    CHECK(cs({5.0, 0, 9.8}) > 0 && cs({5.0, 0, 4}) < 0, "countersink cone opens at the top only");
+}
+
+TEST(surface_textures_stay_distance_bounds) {
+    Graph g;
+    P3 p = coords(g);
+    for (const char* pat : {"knurl", "bumps", "ribs"}) {
+        Program f = compile(textured(cylinder_z(p, 10, 30), p, pat, 3, 0.6));
+        double L = worst_lipschitz(f, {-12, -12, -16}, {12, 12, 16}, 6);
+        CHECK(L < 1.0, "%s Lipschitz %g", pat, L);
+        CHECK(topology(dual_contour(f, {{-11, -11, -16}, {11, 11, 16}, 0.25})).watertight(), "%s mesh closed", pat);
+    }
 }
 
 int main() {

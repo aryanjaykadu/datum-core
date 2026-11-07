@@ -5,6 +5,7 @@ import { click } from "@/lib/audio";
 import { Viewport, type DisplayMode, type PickResult, type Section, type ViewName } from "@/lib/gpu";
 import type { Vec3 } from "@/lib/ipc";
 import { fmtLen, type Settings } from "@/lib/settings";
+import ViewCube from "./ViewCube";
 
 export interface Marker { id: string; label: string; position: Vec3; tone: "teal" | "amber" | "fail" }
 
@@ -33,6 +34,7 @@ export default function ViewportPanel({ insets, onReady, markers, settings, onSe
   const [points, setPoints] = useState<Vec3[]>([]);
   const [triad, setTriad] = useState<{ x: number[]; y: number[]; z: number[] }>({ x: [1, 0], y: [0, 1], z: [0, -1] });
   const [ms, setMs] = useState<number | null>(null);
+  const [angles, setAngles] = useState<[number, number]>([-2.35, 0.55]);
   const markersRef = useRef(markers);
   markersRef.current = markers;
   const pointsRef = useRef(points);
@@ -76,6 +78,7 @@ export default function ViewportPanel({ insets, onReady, markers, settings, onSe
     };
     const unit = v.cam.dist * 0.05;
     setTriad({ x: axis([unit, 0, 0]), y: axis([0, unit, 0]), z: axis([0, 0, unit]) });
+    setAngles([v.cam.yaw, v.cam.pitch]);
   }
 
   useEffect(() => {
@@ -120,6 +123,7 @@ export default function ViewportPanel({ insets, onReady, markers, settings, onSe
     };
     const up = async (e: PointerEvent) => {
       const wasClick = drag && !drag.moved && e.button === 0;
+      if (drag?.moved && !drag.pan) vpRef.current?.release();
       drag = null;
       if (!wasClick || !measureRef.current) return;
       const r = canvas.getBoundingClientRect();
@@ -130,8 +134,16 @@ export default function ViewportPanel({ insets, onReady, markers, settings, onSe
     };
     const wheel = (e: WheelEvent) => {
       e.preventDefault();
-      vpRef.current?.zoom(e.deltaY);
+      const r = canvas.getBoundingClientRect();
+      vpRef.current?.zoomAt(e.deltaY, e.clientX - r.left, e.clientY - r.top);
     };
+    const dbl = async (e: MouseEvent) => {
+      const r = canvas.getBoundingClientRect();
+      const hit = await vpRef.current?.pick(e.clientX - r.left, e.clientY - r.top);
+      if (hit) vpRef.current?.lookAlong(hit.position, hit.normal);
+      else vpRef.current?.fit();
+    };
+    canvas.addEventListener("dblclick", dbl);
     canvas.addEventListener("pointerdown", down);
     canvas.addEventListener("pointermove", move);
     canvas.addEventListener("pointerup", up);
@@ -145,6 +157,7 @@ export default function ViewportPanel({ insets, onReady, markers, settings, onSe
       canvas.removeEventListener("pointermove", move);
       canvas.removeEventListener("pointerup", up);
       canvas.removeEventListener("wheel", wheel);
+      canvas.removeEventListener("dblclick", dbl);
       ro.disconnect();
     };
   }, [onHover]);
@@ -208,6 +221,7 @@ export default function ViewportPanel({ insets, onReady, markers, settings, onSe
           <option value="shaded">Shaded</option>
           <option value="xray">X-ray</option>
           <option value="normals">Normals</option>
+          <option value="dfm">Manufacturability</option>
           <option value="cost">GPU cost</option>
         </select>
         <select value={section.axis} onChange={(e) => {
@@ -233,6 +247,16 @@ export default function ViewportPanel({ insets, onReady, markers, settings, onSe
         </div>
       )}
 
+      {mode === "dfm" && (
+        <div className="dfm-legend glass-strong">
+          <b>Manufacturability (3D print, Z up)</b>
+          <span><i style={{ background: "#2ec77a" }} />Wall &gt; 1.5 mm</span>
+          <span><i style={{ background: "#f9b32e" }} />Wall 0.5–1.5 mm</span>
+          <span><i style={{ background: "#f2332e" }} />Wall &lt; 0.5 mm</span>
+          <span><i style={{ background: "#9e52f2" }} />Overhang &gt; 45° (needs support)</span>
+        </div>
+      )}
+
       {measure && (
         <div className="measure-readout glass-strong mono">
           {points.length === 0 && "Click a point on the part"}
@@ -245,6 +269,8 @@ export default function ViewportPanel({ insets, onReady, markers, settings, onSe
           )}
         </div>
       )}
+
+      <ViewCube yaw={angles[0]} pitch={angles[1]} onView={(name) => { click(196, 0.3); vpRef.current?.setView(name); }} />
 
       <svg className="triad" viewBox="-40 -40 80 80" aria-hidden>
         {([["x", "#ff6b6b"], ["y", "#6fdc8c"], ["z", "#5ea8ff"]] as const).map(([a, color]) => (

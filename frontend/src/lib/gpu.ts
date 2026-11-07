@@ -2,12 +2,12 @@ import { POINTS_WGSL } from "./pointShader";
 import { RAYMARCH_WGSL } from "./shader";
 import type { Vec3 } from "./ipc";
 
-export type DisplayMode = "shaded" | "cost" | "normals" | "xray";
+export type DisplayMode = "shaded" | "cost" | "normals" | "xray" | "dfm";
 export type ViewName = "iso" | "front" | "back" | "top" | "bottom" | "left" | "right";
 export interface Section { axis: "off" | "x" | "y" | "z"; offset: number; flip: boolean }
 export interface PickResult { position: Vec3; normal: Vec3; cap: boolean }
 
-const MODE_INDEX: Record<DisplayMode, number> = { shaded: 0, cost: 1, normals: 2, xray: 3 };
+const MODE_INDEX: Record<DisplayMode, number> = { shaded: 0, cost: 1, normals: 2, xray: 3, dfm: 4 };
 // z-up camera presets: [yaw, pitch]
 const VIEWS: Record<ViewName, [number, number]> = {
   iso: [-2.35, 0.55], front: [-Math.PI / 2, 0], back: [Math.PI / 2, 0], right: [0, 0], left: [Math.PI, 0],
@@ -48,6 +48,8 @@ export class Viewport {
   private cloudCount = 0;
   cloud = { visible: true, mode: 0 as 0 | 1, alpha: 0.16, voxel: 1, threshold: 0.05 };
 
+  private anim = 0;
+  private spin: [number, number] = [0, 0];
   cam = { yaw: VIEWS.iso[0], pitch: VIEWS.iso[1], dist: 200, target: [0, 0, 0] as Vec3, fov: 32, ortho: false };
   mode: DisplayMode = "shaded";
   grid = true;
@@ -116,7 +118,7 @@ export class Viewport {
     this.scene = { n, registers, lo: [box[0], box[1], box[2]], hi: [box[3], box[4], box[5]], bytes: buffer.byteLength - 40 };
     this.partLo = partLo;
     this.partHi = partHi;
-    if (first) this.fit();
+    if (first) this.fit(false);
     this.request();
   }
 
@@ -201,12 +203,41 @@ export class Viewport {
     return { eye, forward, right, up };
   }
 
-  fit() {
+  /** Ease the camera to a goal over ~0.4 s (shortest way round in yaw). */
+  animateTo(goal: { yaw?: number; pitch?: number; dist?: number; target?: Vec3 }, ms = 420) {
+    cancelAnimationFrame(this.anim);
+    this.spin = [0, 0];
+    const from = { yaw: this.cam.yaw, pitch: this.cam.pitch, dist: this.cam.dist, target: [...this.cam.target] as Vec3 };
+    let dyaw = (goal.yaw ?? from.yaw) - from.yaw;
+    dyaw = Math.atan2(Math.sin(dyaw), Math.cos(dyaw));
+    const t0 = performance.now();
+    const step = () => {
+      const u = Math.min(1, (performance.now() - t0) / ms);
+      const e = 1 - Math.pow(1 - u, 3);
+      this.cam.yaw = from.yaw + dyaw * e;
+      this.cam.pitch = from.pitch + ((goal.pitch ?? from.pitch) - from.pitch) * e;
+      this.cam.dist = from.dist * Math.pow((goal.dist ?? from.dist) / from.dist, e);
+      const gt = goal.target ?? from.target;
+      this.cam.target = from.target.map((v, i) => v + (gt[i] - v) * e) as Vec3;
+      this.poke();
+      if (u < 1) this.anim = requestAnimationFrame(step);
+    };
+    this.anim = requestAnimationFrame(step);
+  }
+  private fitGoal() {
     const lo = this.partLo, hi = this.partHi;
-    this.cam.target = [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2];
     const r = Math.hypot(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) / 2 || 50;
-    this.cam.dist = (r / Math.sin((this.cam.fov * Math.PI) / 360)) * 1.15;
+    return { target: [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2] as Vec3, dist: (r / Math.sin((this.cam.fov * Math.PI) / 360)) * 1.15 };
+  }
+  fit(animate = true) {
+    if (animate) return this.animateTo(this.fitGoal());
+    Object.assign(this.cam, this.fitGoal());
     this.request();
+  }
+  /** Look straight at a surface: camera moves onto the normal through the point. */
+  lookAlong(point: Vec3, normal: Vec3) {
+    const n = norm(normal);
+    this.animateTo({ yaw: Math.atan2(n[1], n[0]), pitch: Math.asin(Math.max(-0.9995, Math.min(0.9995, n[2]))), target: point });
   }
   /** Frame an arbitrary box (e.g. a reach envelope larger than the part). */
   fitBox(lo: Vec3, hi: Vec3) {
@@ -215,12 +246,41 @@ export class Viewport {
     this.fit();
   }
   setView(name: ViewName) {
-    [this.cam.yaw, this.cam.pitch] = VIEWS[name];
-    this.fit();
+    const [yaw, pitch] = VIEWS[name];
+    this.animateTo({ yaw, pitch, ...this.fitGoal() });
   }
   orbit(dx: number, dy: number) {
+    cancelAnimationFrame(this.anim);
     this.cam.yaw -= dx * 0.008;
     this.cam.pitch = Math.max(-1.5699, Math.min(1.5699, this.cam.pitch + dy * 0.008));
+    this.spin = [dx, dy];
+    this.poke();
+  }
+  /** Release after an orbit drag: keep spinning and decay (inertia). */
+  release() {
+    let [dx, dy] = this.spin;
+    if (Math.abs(dx) + Math.abs(dy) < 2) return;
+    const step = () => {
+      dx *= 0.9;
+      dy *= 0.9;
+      this.cam.yaw -= dx * 0.008;
+      this.cam.pitch = Math.max(-1.5699, Math.min(1.5699, this.cam.pitch + dy * 0.008));
+      this.poke();
+      if (Math.abs(dx) + Math.abs(dy) > 0.15) this.anim = requestAnimationFrame(step);
+    };
+    this.anim = requestAnimationFrame(step);
+  }
+  /** Zoom toward a screen point (CSS px) so what's under the cursor stays put. */
+  zoomAt(delta: number, x: number, y: number) {
+    cancelAnimationFrame(this.anim);
+    const f = Math.exp(delta * 0.0012);
+    const next = Math.max(1, Math.min(1e5, this.cam.dist * f));
+    const { right, up } = this.basis();
+    const k = (this.cam.dist * 2 * Math.tan((this.cam.fov * Math.PI) / 360)) / this.canvas.clientHeight;
+    const ox = (x - this.canvas.clientWidth / 2) * k, oy = (this.canvas.clientHeight / 2 - y) * k;
+    const g = 1 - next / this.cam.dist;
+    this.cam.target = this.cam.target.map((t, i) => t + (right[i] * ox + up[i] * oy) * g) as Vec3;
+    this.cam.dist = next;
     this.poke();
   }
   pan(dx: number, dy: number) {

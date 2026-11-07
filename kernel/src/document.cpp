@@ -1,3 +1,4 @@
+#include "dk/parts.hpp"
 #include "dk/document.hpp"
 
 #include "dk/robot.hpp"
@@ -174,6 +175,51 @@ struct Builder {
             for (int i = 1; i < n; ++i) acc = unite(acc, single_input(f, id, rotate_z(p, step * i)));
             return acc;
         }
+        if (type == "gear") {
+            P3 q = local(p, params);
+            try {
+                return spur_gear(q, positive(params, "module", 2, id), int(num(params, "teeth", 20)), num(params, "pressure", 20),
+                                 positive(params, "width", 10, id), num(params, "bore", 0));
+            } catch (const std::runtime_error& e) {
+                fail(id, e.what());
+            }
+        }
+        if (type == "thread") {
+            static const std::map<std::string, double> coarse = {{"M3", 0.5}, {"M4", 0.7}, {"M5", 0.8}, {"M6", 1.0}, {"M8", 1.25},
+                                                                 {"M10", 1.5}, {"M12", 1.75}, {"M16", 2.0}, {"M20", 2.5}};
+            std::string size = params.value("size", std::string("M8"));
+            auto it = coarse.find(size);
+            if (it == coarse.end()) fail(id, "unknown thread size " + size);
+            double pitch = num(params, "pitch", 0);
+            if (pitch <= 0) pitch = it->second;
+            return threaded_rod(local(p, params), std::stod(size.substr(1)), pitch, positive(params, "length", 20, id));
+        }
+        if (type == "hole") {
+            Expr body = single_input(f, id, p);
+            HoleSpec h;
+            try {
+                h = metric_hole(params.value("size", std::string("M6")));
+            } catch (const std::runtime_error& e) {
+                fail(id, e.what());
+            }
+            double depth = positive(params, "depth", 10, id);
+            Expr cut;
+            try {
+                cut = hole_cutter(local(p, params), h, depth, params.value("kind", std::string("simple")));
+            } catch (const std::runtime_error& e) {
+                fail(id, e.what());
+            }
+            return subtract(body, cut);
+        }
+        if (type == "texture") {
+            Expr body = single_input(f, id, p);
+            try {
+                return textured(body, p, params.value("pattern", std::string("knurl")), positive(params, "cell", 3, id),
+                                positive(params, "depth", 0.4, id));
+            } catch (const std::runtime_error& e) {
+                fail(id, e.what());
+            }
+        }
         if (type == "import_mesh") {
             std::string path = params.value("path", std::string());
             if (path.empty()) fail(id, "no mesh file");
@@ -324,6 +370,20 @@ json feature_catalog() {
                             {"params", {{"count", number("Count", 3, 1, "")}, {"step", vec3("Step", {20, 0, 0})}}}}},
         {"pattern_circular", {{"label", "Circular pattern"}, {"group", "Pattern"}, {"inputs", 1},
                               {"params", {{"count", number("Count", 6, 1, "")}, {"angle", number("Total angle", 360, 0, "deg")}}}}},
+        {"hole", {{"label", "Hole (ISO metric)"}, {"group", "Modify"}, {"inputs", 1},
+                  {"params", with_placement({{"size", choice("Size", {"M6", "M3", "M4", "M5", "M8", "M10", "M12", "M16", "M20"})},
+                                             {"kind", choice("Type", {"simple", "counterbore", "countersink"})},
+                                             {"depth", number("Depth", 10, 0.1)}})}}},
+        {"texture", {{"label", "Surface texture"}, {"group", "Modify"}, {"inputs", 1},
+                     {"params", {{"pattern", choice("Pattern", {"knurl", "bumps", "ribs"})}, {"cell", number("Cell size", 3, 0.2)},
+                                 {"depth", number("Depth", 0.4, 0.01)}}}}},
+        {"gear", {{"label", "Spur gear"}, {"group", "Parts"}, {"inputs", 0},
+                  {"params", with_placement({{"module", number("Module", 2, 0.1)}, {"teeth", number("Teeth", 20, 6, "")},
+                                             {"pressure", number("Pressure angle", 20, 14.5, "deg")}, {"width", number("Face width", 10, 0.1)},
+                                             {"bore", number("Bore diameter", 8, 0)}})}}},
+        {"thread", {{"label", "Threaded rod"}, {"group", "Parts"}, {"inputs", 0},
+                    {"params", with_placement({{"size", choice("Size", {"M8", "M3", "M4", "M5", "M6", "M10", "M12", "M16", "M20"})},
+                                               {"length", number("Length", 30, 0.5)}, {"pitch", number("Pitch (0 = coarse)", 0, 0)}})}}},
         {"extrude", {{"label", "Extrude sketch"}, {"group", "Sketch"}, {"inputs", 0},
                      {"params", with_placement({{"profile", json{{"kind", "profile"}, {"label", "Profile"},
                                                                  {"default", json::array({{0, 0, 0}, {40, 0, 0}, {40, 25, 0}, {0, 25, 0}})}}},
