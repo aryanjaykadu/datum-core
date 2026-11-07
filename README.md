@@ -6,7 +6,7 @@ A Windows desktop CAD app built on a GPU implicit-modeling kernel. Geometry is a
 |---|---|---|
 | Desktop shell | `src-tauri/` (Rust, Tauri 2) | Window, `.msi` bundle, `.datum` file association, kernel sidecar lifecycle (Job Object), strict JSON-RPC contract, AES-256-GCM device-locked files (DPAPI-wrapped keys) |
 | Workspace UI | `src/` (Next.js static export) | Full-bleed WebGPU ray-marched viewport, floating glass panels, feature tree, property editor, feature graph, analysis / quote / robotics tabs, Ctrl+K command palette |
-| Kernel | `kernel/` (C++20, separate repo) | Field DAG, interval pruning, dual contouring, GPU brick bytecode, mass properties, analyses, robotics; built as `dk_engine.exe` |
+| Kernel | `kernel/` (C++20) | Field DAG, interval pruning, dual contouring, GPU brick bytecode, mass properties, analyses, robotics; built as `dk_engine.exe` |
 | Legacy engine | `backend/` (Python) | v1 SolidWorks-COM analysis engine; not used by the current app |
 
 ## Build
@@ -16,7 +16,7 @@ The repo has two parts: `kernel/` (C++ geometry engine) and `frontend/` (Tauri d
 Prerequisites: Node 20+, Rust (MSVC) with Visual Studio Build Tools (C++ workload), and the kernel toolchain (`python -m pip install ziglang cmake ninja`).
 
 ```bash
-kernel/build.cmd                                              # builds dk_engine.exe and the tests
+../kernel/build.cmd                                              # builds dk_engine.exe and the tests
 cp ../kernel/build/dk_engine.exe src-tauri/bin/dk_engine-x86_64-pc-windows-msvc.exe
 # STEP converter sidecar (clean venv keeps it ~38 MB)
 python -m venv .pyinstaller/convenv
