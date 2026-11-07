@@ -137,14 +137,25 @@ Expr polygon_sdf(Expr u, Expr v, const Polygon2& poly) {
         Expr d = length(wx - h * ex, wy - h * ey);
         dist = i == 0 ? d : min(dist, d);
     }
-    // inside test: union of triangles, each the intersection of its edge half-planes
+    // inside test: union of triangles, each the intersection of its edge half-planes.
+    // Collinear vertices (e.g. a point inserted on an edge) are dropped first: they do not
+    // change the shape, but a zero-area triangle has a sign field that touches 0 along an
+    // infinite line, which defeats interval culling far from the part.
+    Polygon2 core;
+    for (size_t i = 0; i < n; ++i) {
+        auto prev = poly[(i + n - 1) % n], cur = poly[i], next = poly[(i + 1) % n];
+        double scale = std::hypot(next[0] - prev[0], next[1] - prev[1]) + 1e-12;
+        if (std::abs(cross2(prev, cur, next)) > 1e-9 * scale * scale) core.push_back(cur);
+    }
+    if (core.size() < 3) core = poly;
     Expr sign;
     bool first = true;
-    for (auto& t : triangulate(poly)) {
+    for (auto& t : triangulate(core)) {
+        if (std::abs(cross2(core[t[0]], core[t[1]], core[t[2]])) < 1e-12) continue;  // degenerate
         Expr tri;
         for (int k = 0; k < 3; ++k) {
-            auto a = poly[t[k]];
-            auto b = poly[t[(k + 1) % 3]];
+            auto a = core[t[k]];
+            auto b = core[t[(k + 1) % 3]];
             double ex = b[0] - a[0], ey = b[1] - a[1], l = std::hypot(ex, ey);
             // > 0 outside (CCW). Written as u*nx + v*ny - c rather than reusing (u - a.x):
             // sharing those with the distance part would keep every vertex's offsets alive
@@ -156,7 +167,14 @@ Expr polygon_sdf(Expr u, Expr v, const Polygon2& poly) {
         sign = first ? tri : min(sign, tri);
         first = false;
     }
-    return copysign(dist, sign);
+    // Intersect the inside test with the profile's bounding box. Every triangle lies inside
+    // it, so the sign is unchanged; but sliver triangles (from fillet arcs) have nearly
+    // opposite half-planes whose intervals lose their correlation, so on their own they
+    // cannot prove space far from the part empty. The box can.
+    double minx = 1e300, maxx = -1e300, miny = 1e300, maxy = -1e300;
+    for (auto& q : poly) minx = std::min(minx, q[0]), maxx = std::max(maxx, q[0]), miny = std::min(miny, q[1]), maxy = std::max(maxy, q[1]);
+    Expr box = max(max(minx - u, u - maxx), max(miny - v, v - maxy));
+    return copysign(dist, max(sign, box));
 }
 
 Expr extrude_profile(const P3& p, const Polygon2& poly, double distance, bool symmetric) {

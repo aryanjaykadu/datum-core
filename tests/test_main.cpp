@@ -386,6 +386,22 @@ TEST(sketch_fillets_and_validation) {
     threw = false;
     try { tessellate_profile({{0, 0}, {10, 0}}); } catch (const std::exception&) { threw = true; }
     CHECK(threw, "two points are not a profile");
+    // a point inserted exactly on an edge must not break the field far from the part
+    Graph g;
+    P3 p = coords(g);
+    Program f = compile(extrude_profile(p, tessellate_profile({{0, 0}, {20, 0}, {40, 0}, {40, 25, 5}, {0, 25}}), 10, false));  // the case found in the app
+    // every brick of the engine's 4 m bounds probe that is far from the part must cull
+    const double R = 2000, step = 2 * R / 64;
+    int stuck = 0;
+    for (int i = 0; i < 64; ++i)
+        for (int j = 0; j < 64; ++j)
+            for (int k = 0; k < 64; ++k) {
+                double x = -R + i * step, y = -R + j * step, z = -R + k * step;
+                if (std::max({std::abs(x), std::abs(y), std::abs(z)}) < 300) continue;
+                if (f.bounds({x, x + step}, {y, y + step}, {z, z + step}).lo <= 0) stuck++;
+            }
+    CHECK(stuck == 0, "%d far bricks cannot be proven empty (fillet + collinear point profile)", stuck);
+    CHECK(f({20, 10, 5}) < 0 && f({60, 10, 5}) > 0, "inside / outside after inserting a collinear point");
 }
 
 TEST(extrude_and_revolve_volumes_match_closed_form) {
