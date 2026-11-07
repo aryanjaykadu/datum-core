@@ -243,6 +243,24 @@ struct Builder {
             P3 q = local(p, params);
             return sample_grid(it->second, q.x, q.y, q.z);
         }
+        if (type == "loft") {
+            auto read = [&](const char* key) {
+                std::vector<ProfilePoint> prof;
+                auto it = params.find(key);
+                if (it == params.end() || !it->is_array()) fail(id, std::string("needs a profile '") + key + "'");
+                for (auto& pt : *it) {
+                    if (!pt.is_array() || pt.size() < 2) fail(id, "profile points must be [x, y] or [x, y, fillet]");
+                    prof.push_back({pt[0].get<double>(), pt[1].get<double>(), pt.size() > 2 ? std::max(pt[2].get<double>(), 0.0) : 0.0});
+                }
+                try {
+                    return tessellate_profile(prof);
+                } catch (const std::exception& e) {
+                    fail(id, std::string(key) + ": " + e.what());
+                }
+            };
+            Polygon2 a = read("profile"), b = read("profile_top");
+            return loft_profiles(local(p, params), a, b, positive(params, "height", 30, id));
+        }
         if (type == "extrude" || type == "revolve") {
             std::vector<ProfilePoint> prof;
             auto it = params.find("profile");
@@ -389,6 +407,12 @@ json feature_catalog() {
                                                                  {"default", json::array({{0, 0, 0}, {40, 0, 0}, {40, 25, 0}, {0, 25, 0}})}}},
                                                 {"distance", number("Distance", 10, 0.001)},
                                                 {"direction", choice("Direction", {"one side", "symmetric"})}})}}},
+        {"loft", {{"label", "Loft (blend two sketches)"}, {"group", "Sketch"}, {"inputs", 0},
+                  {"params", with_placement({{"profile", json{{"kind", "profile"}, {"label", "Bottom profile (z = 0)"},
+                                                              {"default", json::array({{-20, -20, 0}, {20, -20, 0}, {20, 20, 0}, {-20, 20, 0}})}}},
+                                             {"profile_top", json{{"kind", "profile"}, {"label", "Top profile"},
+                                                                  {"default", json::array({{-8, -8, 4}, {8, -8, 4}, {8, 8, 4}, {-8, 8, 4}})}}},
+                                             {"height", number("Height", 40, 0.01)}})}}},
         {"revolve", {{"label", "Revolve sketch"}, {"group", "Sketch"}, {"inputs", 0},
                      {"params", with_placement({{"profile", json{{"kind", "profile"}, {"label", "Profile (x = radius)"},
                                                                  {"default", json::array({{0, 0, 0}, {20, 0, 2}, {20, 30, 2}, {0, 30, 0}})}}},

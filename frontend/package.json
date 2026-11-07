@@ -8,6 +8,7 @@
     "backend:build": "python build_backend.py",
     "backend:test": "cd backend && python -m pytest -q",
     "test:urdf": "node tests/urdf.test.ts ../kernel/build/dk_engine.exe",
+    "test:params": "node tests/params.test.ts",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "build": "python build_backend.py && tauri build --bundles msi"

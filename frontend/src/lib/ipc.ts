@@ -22,6 +22,8 @@ export interface DatumDocument {
   name?: string;
   material: string;
   root: string;
+  /** Named design values; feature fields reference them as "=name * 2" (resolved before the kernel). */
+  parameters?: Record<string, string | number>;
   features: Feature[];
 }
 

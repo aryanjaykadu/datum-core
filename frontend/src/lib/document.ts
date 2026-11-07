@@ -74,27 +74,66 @@ export function emptyDocument(): DatumDocument {
 }
 
 /** Linear undo/redo history of whole documents (documents are small JSON). */
+/** One-line description of what changed between two versions of a document. */
+export function describeChange(prev: DatumDocument, next: DatumDocument): string {
+  const name = (f: { id: string; name?: string }) => f.name ?? f.id;
+  const before = new Map(prev.features.map((f) => [f.id, f]));
+  const after = new Map(next.features.map((f) => [f.id, f]));
+  const added = next.features.filter((f) => !before.has(f.id));
+  const removed = prev.features.filter((f) => !after.has(f.id));
+  if (added.length) return `Add ${added.map(name).join(", ")}`;
+  if (removed.length) return `Delete ${removed.map(name).join(", ")}`;
+  for (const f of next.features) {
+    const o = before.get(f.id)!;
+    if (o.suppressed !== f.suppressed) return `${f.suppressed ? "Suppress" : "Unsuppress"} ${name(f)}`;
+    if (o.name !== f.name) return `Rename ${name(o)} → ${name(f)}`;
+    if (JSON.stringify(o.inputs) !== JSON.stringify(f.inputs)) return `Rewire ${name(f)}`;
+    const keys = Object.keys({ ...o.params, ...f.params }).filter((k) => JSON.stringify(o.params?.[k]) !== JSON.stringify(f.params?.[k]));
+    if (keys.length) return `Edit ${name(f)}: ${keys.join(", ")}`;
+  }
+  if (prev.material !== next.material) return `Material → ${next.material}`;
+  if (JSON.stringify(prev.parameters) !== JSON.stringify(next.parameters)) return "Edit parameters";
+  if (prev.name !== next.name) return `Rename part → ${next.name}`;
+  if (prev.root !== next.root) return "Change result feature";
+  return "Edit";
+}
+
+export interface HistoryEntry { label: string; at: number }
+
 export class History {
   private past: DatumDocument[] = [];
   private future: DatumDocument[] = [];
-  push(previous: DatumDocument) {
+  /** labels for past[i] -> past[i + 1] (or -> current); same for the redo side */
+  private pastLabels: HistoryEntry[] = [];
+  private futureLabels: HistoryEntry[] = [];
+  push(previous: DatumDocument, next?: DatumDocument) {
     this.past.push(previous);
-    if (this.past.length > 200) this.past.shift();
+    this.pastLabels.push({ label: next ? describeChange(previous, next) : "Edit", at: Date.now() });
+    if (this.past.length > 200) (this.past.shift(), this.pastLabels.shift());
     this.future = [];
+    this.futureLabels = [];
   }
   undo(current: DatumDocument): DatumDocument | null {
     const prev = this.past.pop();
-    if (prev) this.future.push(current);
+    const label = this.pastLabels.pop();
+    if (prev) (this.future.push(current), this.futureLabels.push(label!));
     return prev ?? null;
   }
   redo(current: DatumDocument): DatumDocument | null {
     const next = this.future.pop();
-    if (next) this.past.push(current);
+    const label = this.futureLabels.pop();
+    if (next) (this.past.push(current), this.pastLabels.push(label!));
     return next ?? null;
   }
   clear() {
     this.past = [];
     this.future = [];
+    this.pastLabels = [];
+    this.futureLabels = [];
+  }
+  /** Done steps (oldest first) and undone steps (next redo first). */
+  get entries(): { done: HistoryEntry[]; undone: HistoryEntry[] } {
+    return { done: [...this.pastLabels], undone: [...this.futureLabels].reverse() };
   }
   get canUndo() {
     return this.past.length > 0;

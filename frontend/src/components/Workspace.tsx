@@ -9,6 +9,7 @@ import {
   type Catalog, type DatumDocument, type Evaluation, type Feature, exporter,
 } from "@/lib/ipc";
 import { TEMPLATES } from "@/lib/templates";
+import { resolveDocument } from "@/lib/params";
 import { recentFiles, rememberFile, useSettings } from "@/lib/settings";
 import { installSpringVariables } from "@/lib/springs";
 import CommandPalette, { parseIntents } from "./CommandPalette";
@@ -21,6 +22,7 @@ import QuotePanel from "./QuotePanel";
 import RoboticsPanel from "./RoboticsPanel";
 import Ribbon from "./Ribbon";
 import RunLog, { type LogLine } from "./RunLog";
+import HistoryPanel from "./HistoryPanel";
 import SettingsDialog from "./SettingsDialog";
 import StatusBar from "./StatusBar";
 import ViewportPanel, { type Marker } from "./ViewportPanel";
@@ -40,7 +42,7 @@ export default function Workspace() {
   const [error, setError] = useState<string | null>(null);
   const [log, setLog] = useState<LogLine[]>([]);
   const [op, setOp] = useState<Operation>("add");
-  const [dock, setDock] = useState<"log" | "graph">("graph");
+  const [dock, setDock] = useState<"log" | "graph" | "history">("graph");
   const [rightTab, setRightTab] = useState<"properties" | "analysis" | "quote" | "robotics">("properties");
   const [showSettings, setShowSettings] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
@@ -70,7 +72,8 @@ export default function Workspace() {
   const opRef = useRef(op);
   opRef.current = op;
   const commit = useCallback((next: DatumDocument) => {
-    history.current.push(docRef.current);
+    if (JSON.stringify(next) === JSON.stringify(docRef.current)) return;  // no-op edits leave no history
+    history.current.push(docRef.current, next);
     setDoc(next);
     setDirty(true);
     force((n) => n + 1);
@@ -92,6 +95,16 @@ export default function Workspace() {
   const redo = () => {
     const next = history.current.redo(docRef.current);
     if (next) (setDoc(next), setDirty(true), force((n) => n + 1));
+  };
+  /** Jump: negative = undo that many steps, positive = redo. */
+  const travel = (steps: number) => {
+    let d = docRef.current;
+    for (let i = 0; i < Math.abs(steps); i++) {
+      const r = steps < 0 ? history.current.undo(d) : history.current.redo(d);
+      if (!r) break;
+      d = r;
+    }
+    if (d !== docRef.current) (setDoc(d), setDirty(true), force((n) => n + 1));
   };
 
   // ------------------------------------------------------------ startup
@@ -154,7 +167,9 @@ export default function Workspace() {
     const timer = setTimeout(async () => {
       setBusy(true);
       try {
-        const r = await kernel.evaluate(doc, settings.quality, vp.current?.vramMb ?? 0);
+        const resolved = resolveDocument(doc);
+        if (resolved.errors.length) throw new Error(resolved.errors.slice(0, 3).join("; "));
+        const r = await kernel.evaluate(resolved.doc, settings.quality, vp.current?.vramMb ?? 0);
         if (seq !== evalSeq.current) return;
         const scene = await kernel.scene(settings.bricks);
         if (seq !== evalSeq.current) return;
@@ -338,7 +353,7 @@ export default function Workspace() {
     const skin = Math.max(0.8, Math.min(2, Math.min(...size) / 25));
     const base = docRef.current;
     const withWall = (wall: number) => insertFeature(base, catalog, "gyroid_infill", "add", { cell: +cell.toFixed(2), wall: +wall.toFixed(3), skin: +skin.toFixed(2) });
-    const massAt = async (wall: number) => (await kernel.evaluate(withWall(wall).doc, "draft", 0)).contract.telemetry_and_4d.mass_kg;
+    const massAt = async (wall: number) => (await kernel.evaluate(resolveDocument(withWall(wall).doc).doc, "draft", 0)).contract.telemetry_and_4d.mass_kg;
     setBusy(true);
     pushLog("info", "copilot", `lightening ${pct}%: ${(m0 * 1000).toFixed(1)} g -> ${(target * 1000).toFixed(1)} g target, cell ${cell.toFixed(1)} mm`);
     try {
@@ -453,6 +468,7 @@ export default function Workspace() {
       { separator: true },
       { label: "Feature graph", checked: dock === "graph", action: () => setDock("graph") },
       { label: "Run log", checked: dock === "log", action: () => setDock("log") },
+      { label: "History", checked: dock === "history", action: () => setDock("history") },
     ],
     Insert: catalog
       ? Object.entries(catalog.features).filter(([, s]) => !s.hidden).map(([type, s]) => ({ label: `${s.group}: ${s.label}`, action: () => insert(type), disabled: s.inputs !== 0 && doc.features.length === 0 }))
@@ -523,9 +539,10 @@ export default function Workspace() {
           <div className="tabs" role="tablist">
             <button role="tab" aria-selected={dock === "graph"} onClick={() => setDock("graph")}>Feature graph</button>
             <button role="tab" aria-selected={dock === "log"} onClick={() => setDock("log")}>Run log</button>
+            <button role="tab" aria-selected={dock === "history"} onClick={() => setDock("history")}>History</button>
           </div>
         </div>
-        {dock === "log" ? <RunLog lines={log} progress={busy ? 0.6 : null} /> : (
+        {dock === "history" ? <HistoryPanel entries={history.current.entries} onTravel={travel} /> : dock === "log" ? <RunLog lines={log} progress={busy ? 0.6 : null} /> : (
           <DagCanvas doc={doc} selected={selected} onSelect={setSelected}
             onConnect={(source, target) => {
               const f = doc.features.find((x) => x.id === target);

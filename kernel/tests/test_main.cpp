@@ -604,6 +604,24 @@ TEST(surface_textures_stay_distance_bounds) {
     }
 }
 
+TEST(loft_matches_a_frustum_and_stays_a_bound) {
+    Graph g;
+    P3 p = coords(g);
+    // square 40 -> square 16 over 30 mm: a square frustum, V = h/3 (A1 + A2 + sqrt(A1 A2))
+    Polygon2 a = tessellate_profile({{-20, -20}, {20, -20}, {20, 20}, {-20, 20}});
+    Polygon2 b = tessellate_profile({{-8, -8}, {8, -8}, {8, 8}, {-8, 8}});
+    Program loft = compile(loft_profiles(p, a, b, 30));
+    Mesh m = dual_contour(loft, {{-21.037, -21.053, -1.071}, {21.1, 21.1, 31.1}, 0.2});
+    double v = mass_properties(m).volume_mm3, want = 30.0 / 3 * (1600 + 256 + 640);
+    CHECK(topology(m).watertight(), "loft mesh closed");
+    // blending distance fields rounds the corners mid-way (slightly less than a ruled frustum)
+    CHECK(v < want && v > want * 0.98, "loft volume %g vs frustum %g", v, want);
+    CHECK(loft({19.9, 0, 0.01}) < 0 && loft({20.1, 0, 0.01}) > 0, "bottom profile exact");
+    CHECK(loft({7.9, 0, 29.99}) < 0 && loft({8.1, 0, 29.99}) > 0, "top profile exact");
+    CHECK(loft({0, 13.9, 15}) < 0 && loft({0, 14.1, 15}) > 0, "mid-height edge at the average");
+    CHECK(worst_lipschitz(loft, {-25, -25, -5}, {25, 25, 35}, 9) <= 1.0 + 1e-9, "loft Lipschitz");
+}
+
 int main() {
     for (auto& t : registry()) {
         int before = failures;

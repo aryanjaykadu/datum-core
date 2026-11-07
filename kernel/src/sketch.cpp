@@ -185,6 +185,22 @@ Expr extrude_profile(const P3& p, const Polygon2& poly, double distance, bool sy
     return min(max(d2, dz), 0.0) + length(max(d2, 0.0), max(dz, 0.0));
 }
 
+Expr loft_profiles(const P3& p, const Polygon2& bottom, const Polygon2& top, double height) {
+    if (!(height > 0)) throw std::runtime_error("loft height must be > 0");
+    double lo[2] = {1e300, 1e300}, hi[2] = {-1e300, -1e300};
+    for (const Polygon2* poly : {&bottom, &top})
+        for (auto& v : *poly)
+            for (int a = 0; a < 2; ++a) lo[a] = std::min(lo[a], v[a]), hi[a] = std::max(hi[a], v[a]);
+    // |sA - sB| <= Hausdorff(A, B) <= joint diagonal: bounds the z-slope of the blend
+    double slope = std::hypot(hi[0] - lo[0], hi[1] - lo[1]) / height;
+    double scale = 1.0 / std::sqrt(1.0 + slope * slope);
+    Expr t = min(max(p.z * (1.0 / height), 0.0), 1.0);
+    Expr sa = polygon_sdf(p.x, p.y, bottom), sb = polygon_sdf(p.x, p.y, top);
+    Expr d2 = sa + (sb - sa) * t;
+    Expr dz = abs(p.z - height / 2) - height / 2;
+    return max(d2 * scale, dz);
+}
+
 Expr revolve_profile(const P3& p, const Polygon2& poly, double angle_deg) {
     Expr radial = length(p.x, p.z);
     Expr body = polygon_sdf(radial, p.y, poly);

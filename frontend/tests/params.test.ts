@@ -1,0 +1,18 @@
+import { evalExpr, resolveParameters, resolveDocument } from "../src/lib/params.ts";
+const ok = (c, m) => { if (!c) { console.log("FAIL", m); process.exitCode = 1; } };
+ok(evalExpr("=1 + 2 * 3", () => 0) === 7, "precedence");
+ok(evalExpr("=(1+2)*3", () => 0) === 9, "parens");
+ok(evalExpr("=2^3^2", () => 0) === 512, "right assoc power");
+ok(evalExpr("=-2^2", () => 0) === -4, "unary minus");
+ok(Math.abs(evalExpr("=sqrt(16) + cos(60) + max(1, 5, 3)", () => 0) - 9.5) < 1e-12, "functions");
+ok(evalExpr("=w/2 - t", (n) => ({ w: 80, t: 2 })[n]) === 38, "names");
+let threw = false; try { evalExpr("=1 +", () => 0); } catch { threw = true; } ok(threw, "syntax error");
+threw = false; try { evalExpr("=alert(1)", () => 0); } catch { threw = true; } ok(threw, "no arbitrary calls");
+const r = resolveParameters({ width: 80, wall: "width / 40", inner: "=width - 2*wall", a: "b", b: "a" });
+ok(r.values.inner === 76, "chained " + r.values.inner);
+ok(r.errors.a && r.errors.b, "cycle detected");
+const d = resolveDocument({ version: 1, units: "mm", material: "x", root: "b", parameters: { w: 50 }, features: [{ id: "b", type: "box", params: { size: ["=w", "=w/2", 10], radius: 1 } }] });
+ok(JSON.stringify(d.doc.features[0].params.size) === "[50,25,10]" && !("parameters" in d.doc) && d.errors.length === 0, "document resolve");
+const e = resolveDocument({ version: 1, units: "mm", material: "x", root: "b", features: [{ id: "b", type: "box", params: { radius: "=nope" } }] });
+ok(e.errors.length === 1, "unknown name reported");
+console.log(process.exitCode ? "params tests FAILED" : "params tests: all passed");

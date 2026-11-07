@@ -4,27 +4,46 @@ import { useEffect, useState } from "react";
 import type { Catalog, DatumDocument, Feature, ParamSpec } from "@/lib/ipc";
 import { fromDisplay, toDisplay, type Settings } from "@/lib/settings";
 import SketchEditor, { type ProfilePt } from "./SketchEditor";
+import { evalExpr, isExpr, resolveParameters } from "@/lib/params";
+import ParametersTable from "./ParametersTable";
 
-function NumberField({ value, onCommit, unit, settings, min }: { value: number; onCommit: (v: number) => void; unit?: string; settings: Settings; min?: number }) {
+type Lookup = (name: string) => number;
+
+function NumberField({ value, onCommit, unit, settings, min, lookup }: { value: number | string; onCommit: (v: number | string) => void; unit?: string; settings: Settings; min?: number; lookup?: Lookup }) {
   const isLength = unit === "mm";
-  const shown = isLength ? toDisplay(value, settings) : value;
-  const [text, setText] = useState(String(+shown.toFixed(6)));
-  useEffect(() => setText(String(+shown.toFixed(6))), [shown]);
+  const expr = isExpr(value) ? value : null;
+  let resolved = 0, bad = false;
+  try {
+    resolved = expr ? evalExpr(expr, lookup ?? (() => { throw new Error("no parameters"); })) : Number(value);
+  } catch {
+    bad = true;
+  }
+  const shown = isLength ? toDisplay(resolved, settings) : resolved;
+  const initial = expr ?? String(+shown.toFixed(6));
+  const [text, setText] = useState(initial);
+  useEffect(() => setText(initial), [initial]);
   const commit = () => {
+    // "=expr" keeps a live link to the parameters (expressions are in mm / native units)
+    if (isExpr(text)) {
+      if (text.trim() !== expr) onCommit(text.trim());
+      return;
+    }
     const v = Number(text);
     if (!Number.isFinite(v)) return setText(String(+shown.toFixed(6)));
     const mm = isLength ? fromDisplay(v, settings) : v;
     if (min !== undefined && mm < min) return setText(String(+shown.toFixed(6)));
     if (mm !== value) onCommit(mm);
   };
+  const title = expr ? (bad ? "Expression error" : `= ${+resolved.toFixed(6)} ${unit ?? ""}`) : "Type =name to link a parameter";
   return (
     <span className="field">
-      <input className="mono" value={text} inputMode="decimal" onChange={(e) => setText(e.target.value)} onBlur={commit}
+      <input className={`mono${expr ? " linked" : ""}${bad ? " invalid" : ""}`} value={text} title={title} onChange={(e) => setText(e.target.value)} onBlur={commit}
         onKeyDown={(e) => {
           if (e.key === "Enter") (e.target as HTMLInputElement).blur();
           if (e.key === "ArrowUp" || e.key === "ArrowDown") {
             e.preventDefault();
             const step = (e.shiftKey ? 10 : 1) * (e.key === "ArrowUp" ? 1 : -1) * (isLength && settings.units === "in" ? 0.1 : 1);
+            if (expr) return;
             const v = (Number(text) || 0) + step;
             setText(String(+v.toFixed(6)));
             const mm = isLength ? fromDisplay(v, settings) : v;
@@ -36,7 +55,7 @@ function NumberField({ value, onCommit, unit, settings, min }: { value: number; 
   );
 }
 
-function ParamRow({ name, spec, value, onChange, settings, featureType }: { name: string; spec: ParamSpec; value: unknown; onChange: (v: unknown) => void; settings: Settings; featureType?: string }) {
+function ParamRow({ name, spec, value, onChange, settings, featureType, lookup }: { name: string; spec: ParamSpec; value: unknown; onChange: (v: unknown) => void; settings: Settings; featureType?: string; lookup: Lookup }) {
   if (spec.kind === "file") {
     const path = String(value ?? "");
     return (
@@ -58,18 +77,18 @@ function ParamRow({ name, spec, value, onChange, settings, featureType }: { name
     return (
       <label className="prop">
         <span>{spec.label}</span>
-        <NumberField value={Number(value ?? spec.default)} onCommit={onChange} unit={spec.unit} settings={settings} min={spec.min} />
+        <NumberField value={isExpr(value) ? value : Number(value ?? spec.default)} onCommit={onChange} unit={spec.unit} settings={settings} min={spec.min} lookup={lookup} />
       </label>
     );
   if (spec.kind === "vec3") {
-    const v = (Array.isArray(value) ? value : spec.default) as number[];
+    const v = (Array.isArray(value) ? value : spec.default) as (number | string)[];
     const unit = name === "rotation" || spec.label.includes("(deg)") ? "deg" : name === "normal" ? "" : "mm";
     return (
       <div className="prop vec">
         <span>{spec.label}</span>
         <div>
           {["X", "Y", "Z"].map((axis, i) => (
-            <NumberField key={axis} value={v[i]} unit={unit || undefined} settings={settings}
+            <NumberField key={axis} value={v[i]} unit={unit || undefined} settings={settings} lookup={lookup}
               onCommit={(x) => onChange(v.map((c, j) => (j === i ? x : c)))} />
           ))}
         </div>
@@ -96,6 +115,11 @@ export default function PropertyPanel({ doc, catalog, selected, settings, onChan
   onDelete: (id: string) => void;
 }) {
   const f = doc.features.find((x) => x.id === selected);
+  const { values } = resolveParameters(doc.parameters);
+  const lookup: Lookup = (n) => {
+    if (n in values) return values[n];
+    throw new Error(`unknown parameter ${n}`);
+  };
   if (!catalog) return null;
 
   if (!f)
@@ -118,6 +142,7 @@ export default function PropertyPanel({ doc, catalog, selected, settings, onChan
             {doc.features.map((x) => <option key={x.id} value={x.id}>{x.name ?? x.id}</option>)}
           </select>
         </label>
+        <ParametersTable parameters={doc.parameters ?? {}} onChange={(parameters) => onDocChange({ parameters })} />
       </div>
     );
 
@@ -131,7 +156,7 @@ export default function PropertyPanel({ doc, catalog, selected, settings, onChan
         {spec?.label ?? f.type} <span className="muted mono">{f.id}</span>
       </h3>
       {spec && Object.entries(spec.params).map(([name, p]) => (
-        <ParamRow key={name} name={name} spec={p} value={f.params?.[name]} settings={settings} featureType={f.type}
+        <ParamRow key={name} name={name} spec={p} value={f.params?.[name]} settings={settings} featureType={f.type} lookup={lookup}
           onChange={(v) => onChange(f.id, { params: { ...f.params, [name]: v } })} />
       ))}
       {spec && spec.inputs !== 0 && (
