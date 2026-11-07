@@ -16,6 +16,11 @@ Prerequisites: Node 20+, Rust (MSVC) with Visual Studio Build Tools (C++ workloa
 ```bash
 ../kernel/build.cmd                                              # builds dk_engine.exe and the tests
 cp ../kernel/build/dk_engine.exe src-tauri/bin/dk_engine-x86_64-pc-windows-msvc.exe
+# STEP converter sidecar (clean venv keeps it ~38 MB)
+python -m venv .pyinstaller/convenv
+.pyinstaller/convenv/Scripts/pip install cascadio numpy pyinstaller
+.pyinstaller/convenv/Scripts/pyinstaller --onefile --distpath .pyinstaller/dist converter/step_convert.py
+cp .pyinstaller/dist/step_convert.exe src-tauri/bin/step_convert-x86_64-pc-windows-msvc.exe
 npm install
 npx tauri build --bundles msi
 ```
@@ -30,6 +35,13 @@ python ../kernel/tests/engine_smoke.py ../kernel/build/dk_engine.exe   # engine 
 npm run test:urdf                                                # URDF import against the real kernel
 cd src-tauri && cargo test --release                             # .datum encryption
 ```
+
+## Sketch and import
+
+- **Sketch → Extrude / Revolve**: edit the profile in the property panel (drag points, `+` to insert, per-point fillet radius). The profile becomes an exact signed-distance field.
+- **File → Import STEP / STL / OBJ (Ctrl+I)**: STEP is tessellated by OpenCASCADE, then every mesh is baked into a signed-distance grid (Resolution, default 160 cells). Imported parts are accurate to the grid (flywheel test: −0.07 % volume vs. SolidWorks) and reference the cached mesh in `%LOCALAPPDATA%\DatumCore\imports`, so re-import on another machine.
+
+Autosave runs every few seconds while there are unsaved changes; logs live in `%LOCALAPPDATA%\DatumCore` (Help → Open log folder).
 
 ## What the numbers are
 
