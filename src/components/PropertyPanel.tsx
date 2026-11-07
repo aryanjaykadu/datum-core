@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import type { Catalog, DatumDocument, Feature, ParamSpec } from "@/lib/ipc";
 import { fromDisplay, toDisplay, type Settings } from "@/lib/settings";
+import SketchEditor, { type ProfilePt } from "./SketchEditor";
 
 function NumberField({ value, onCommit, unit, settings, min }: { value: number; onCommit: (v: number) => void; unit?: string; settings: Settings; min?: number }) {
   const isLength = unit === "mm";
@@ -35,7 +36,15 @@ function NumberField({ value, onCommit, unit, settings, min }: { value: number; 
   );
 }
 
-function ParamRow({ name, spec, value, onChange, settings }: { name: string; spec: ParamSpec; value: unknown; onChange: (v: unknown) => void; settings: Settings }) {
+function ParamRow({ name, spec, value, onChange, settings, featureType }: { name: string; spec: ParamSpec; value: unknown; onChange: (v: unknown) => void; settings: Settings; featureType?: string }) {
+  if (spec.kind === "profile")
+    return (
+      <div className="prop-profile">
+        <span>{spec.label}</span>
+        <SketchEditor value={((value ?? spec.default) as ProfilePt[]).map((p) => [p[0], p[1], p[2] ?? 0] as ProfilePt)} onCommit={onChange} settings={settings}
+          axisHint={featureType === "revolve" ? "Revolves about the Y axis (x = radius)" : "Extrudes along +Z of the sketch plane"} />
+      </div>
+    );
   if (spec.kind === "number")
     return (
       <label className="prop">
@@ -113,7 +122,7 @@ export default function PropertyPanel({ doc, catalog, selected, settings, onChan
         {spec?.label ?? f.type} <span className="muted mono">{f.id}</span>
       </h3>
       {spec && Object.entries(spec.params).map(([name, p]) => (
-        <ParamRow key={name} name={name} spec={p} value={f.params?.[name]} settings={settings}
+        <ParamRow key={name} name={name} spec={p} value={f.params?.[name]} settings={settings} featureType={f.type}
           onChange={(v) => onChange(f.id, { params: { ...f.params, [name]: v } })} />
       ))}
       {spec && spec.inputs !== 0 && (

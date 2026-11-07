@@ -38,7 +38,8 @@ fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> VOut 
   let half = C.voxel * 0.55 / scale;
   let x = dot(d, U.right.xyz) / scale / U.right.w + U.shift.x;
   let y = -(dot(d, U.up.xyz) / scale) + U.shift.y;  // screen-down convention of the marcher
-  o.pos = vec4f(x + c.x * half / U.right.w, -(y) + c.y * half, 0.5, 1.0);
+  let depth = z / (z + U.hi.w * U.lo.w);  // matches view_depth() in the ray marcher
+  o.pos = vec4f(x + c.x * half / U.right.w, -(y) + c.y * half, depth, 1.0);
   o.uv = c;
   let lock = dex < C.threshold;
   o.color = vec4f(ramp(dex), select(C.alpha, min(C.alpha * 2.5, 0.9), lock));

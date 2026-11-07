@@ -292,3 +292,37 @@ select option { background: #16181e; }
 .dh-row { display: contents; }
 .dh-row > span { color: var(--text-dim); text-align: center; }
 .dh-row input { width: 100%; min-width: 0; padding: 2px 4px; font-size: 10.5px; }
+
+/* ---------- sketch editor ---------- */
+.prop-profile { display: flex; flex-direction: column; gap: 6px; margin: 6px 0 10px; }
+.prop-profile > span { color: var(--text-dim); font-family: var(--font-mono), monospace; font-size: 11.5px; }
+.sketch-canvas { width: 100%; aspect-ratio: 300 / 220; border: 1px solid var(--hairline); border-radius: 10px; background: rgba(4, 6, 9, 0.6); touch-action: none; }
+.sketch .grid line { stroke: rgba(255, 255, 255, 0.05); stroke-width: 1; }
+.sketch .grid line.axis { stroke: rgba(79, 209, 197, 0.35); }
+.sketch .profile { fill: rgba(79, 209, 197, 0.12); stroke: var(--teal); stroke-width: 1.5; stroke-linejoin: round; }
+.sketch .pt circle { fill: #0b0c10; stroke: var(--text); stroke-width: 1.5; cursor: grab; }
+.sketch .pt.sel circle { stroke: var(--amber); fill: rgba(240, 180, 90, 0.3); }
+.sketch .dim { fill: var(--text-dim); font: 9.5px var(--font-mono), monospace; text-anchor: middle; cursor: text; }
+.sketch .dim:hover { fill: var(--amber); }
+.sketch .rad { fill: var(--amber); font: 9px var(--font-mono), monospace; }
+.sketch .insert { opacity: 0; cursor: copy; transition: opacity 120ms; }
+.sketch-canvas:hover .insert { opacity: 0.85; }
+.sketch .insert circle { fill: rgba(79, 209, 197, 0.25); stroke: var(--teal); }
+.sketch .insert text { fill: var(--text); font: 9px var(--font-mono), monospace; text-anchor: middle; pointer-events: none; }
+.sketch-row { display: flex; align-items: center; gap: 4px; font-family: var(--font-mono), monospace; font-size: 11px; }
+.sketch-row span { color: var(--text-dim); min-width: 26px; }
+.sketch-row input { width: 0; flex: 1; padding: 2px 4px; }
+.sketch-row em { font-style: normal; color: var(--text-faint); font-size: 10px; }
+
+/* ---------- welcome / crash ---------- */
+.welcome { width: min(640px, 94vw); }
+.welcome-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 12px 0; }
+.welcome-card { display: flex; flex-direction: column; gap: 4px; text-align: left; padding: 12px; border-radius: 10px; border: 1px solid var(--hairline);
+  background: rgba(255, 255, 255, 0.03); transition: border-color 140ms, transform var(--spring-press-ms) var(--spring-press); }
+.welcome-card:hover { border-color: rgba(79, 209, 197, 0.5); transform: translateY(-1px); }
+.welcome-card b { font-weight: 600; }
+.welcome-card span { color: var(--text-dim); font-size: 11.5px; line-height: 1.4; }
+.crash { position: fixed; inset: 0; display: grid; place-items: center; background: var(--canvas); }
+.crash-card { width: min(520px, 92vw); padding: 20px; }
+.crash-card h2 { margin: 0 0 6px; font-size: 16px; font-weight: 600; }
+.crash-card pre { white-space: pre-wrap; font-size: 11px; color: var(--fail); background: rgba(0, 0, 0, 0.3); padding: 8px; border-radius: 8px; max-height: 160px; overflow: auto; }

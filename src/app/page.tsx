@@ -1,5 +1,10 @@
+import ErrorBoundary from "@/components/ErrorBoundary";
 import Workspace from "@/components/Workspace";
 
 export default function Page() {
-  return <Workspace />;
+  return (
+    <ErrorBoundary>
+      <Workspace />
+    </ErrorBoundary>
+  );
 }

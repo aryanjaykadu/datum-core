@@ -54,7 +54,7 @@ export interface Evaluation {
 }
 
 export interface ParamSpec {
-  kind: "number" | "vec3" | "choice";
+  kind: "number" | "vec3" | "choice" | "profile";
   label: string;
   default: unknown;
   min?: number;
@@ -139,6 +139,15 @@ export async function pickSavePath(defaultName: string, ext: "datum" | "stl"): P
   });
   return r ?? null;
 }
+
+export const support = {
+  autosave: (document: DatumDocument, path: string | null) => invoke<void>("autosave_write", { document, path }),
+  recovery: () => invoke<{ saved_at: number; path: string | null; document: DatumDocument } | null>("autosave_read"),
+  clearAutosave: () => invoke<void>("autosave_clear"),
+  log: (level: string, message: string) => invoke<void>("log_line", { level, message }),
+  openLogs: () => invoke<void>("open_log_folder"),
+  info: () => invoke<{ name: string; version: string; tauri: string; data_dir: string }>("app_info"),
+};
 
 export async function pickRobotFile(): Promise<string | null> {
   if (!isTauri()) return null;

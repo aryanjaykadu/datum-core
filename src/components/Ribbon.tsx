@@ -3,7 +3,7 @@
 import type { Catalog } from "@/lib/ipc";
 import type { Operation } from "@/lib/document";
 
-const GROUPS = ["Primitive", "Modify", "Pattern", "Lattice", "Boolean", "Robotics"];
+const GROUPS = ["Sketch", "Primitive", "Modify", "Pattern", "Lattice", "Boolean", "Robotics"];
 
 export default function Ribbon({ catalog, op, onOp, onInsert, hasBody }: {
   catalog: Catalog | null;

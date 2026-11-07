@@ -5,7 +5,7 @@ import { click, reject, setSoundEnabled, validate } from "@/lib/audio";
 import { deleteFeature, emptyDocument, History, insertFeature, updateFeature, type Operation } from "@/lib/document";
 import type { PickResult, Viewport } from "@/lib/gpu";
 import {
-  confirmDialog, files, isTauri, kernel, listen, pickOpenPath, pickSavePath, setWindowTitle, windowAction,
+  confirmDialog, files, isTauri, kernel, listen, pickOpenPath, pickSavePath, setWindowTitle, support, windowAction,
   type Catalog, type DatumDocument, type Evaluation, type Feature,
 } from "@/lib/ipc";
 import { recentFiles, rememberFile, useSettings } from "@/lib/settings";
@@ -45,6 +45,8 @@ export default function Workspace() {
   const [showAbout, setShowAbout] = useState(false);
   const [showPalette, setShowPalette] = useState(false);
   const [panels, setPanels] = useState({ tree: true, inspector: true, dock: true });
+  const [showWelcome, setShowWelcome] = useState(false);
+  const [version, setVersion] = useState<string>("");
   const togglePanel = (k: keyof typeof panels) => setPanels((p) => ({ ...p, [k]: !p[k] }));
   const [hover, setHover] = useState<PickResult | null>(null);
   const [, force] = useState(0);
@@ -54,6 +56,7 @@ export default function Workspace() {
   const evalSeq = useRef(0);
 
   const pushLog = useCallback((level: LogLine["level"], stage: string, msg: string) => {
+    if (level !== "info" && isTauri()) void support.log(level, `${stage}: ${msg}`).catch(() => undefined);
     const t = new Date().toLocaleTimeString("en-GB", { hour12: false });
     setLog((l) => [...l.slice(-300), { id: logId.current++, t, level, stage, msg }]);
   }, []);
@@ -94,6 +97,27 @@ export default function Workspace() {
       return;
     }
     kernel.catalog().then(setCatalog).catch((e) => pushLog("error", "kernel", String(e)));
+    support.info().then((i) => setVersion(i.version)).catch(() => undefined);
+    const onError = (e: ErrorEvent) => pushLog("error", "ui", `${e.message} at ${e.filename}:${e.lineno}`);
+    const onRejection = (e: PromiseRejectionEvent) => pushLog("error", "ui", `unhandled: ${String(e.reason)}`);
+    window.addEventListener("error", onError);
+    window.addEventListener("unhandledrejection", onRejection);
+    // a snapshot left behind means the last session did not close cleanly
+    support.recovery().then(async (snap) => {
+      if (snap?.document?.features?.length) {
+        const when = new Date(snap.saved_at * 1000).toLocaleString();
+        if (await confirmDialog(`Datum Core did not close cleanly. Recover the design autosaved at ${when}?`, "Recover design")) {
+          replaceDocument(snap.document, snap.path, false);
+          setDirty(true);
+          pushLog("info", "recovery", `recovered autosave from ${when}`);
+          return;
+        }
+      }
+      await support.clearAutosave();
+      try {
+        if (!localStorage.getItem("datum.welcomed")) setShowWelcome(true);
+      } catch {}
+    }).catch(() => undefined);
     files.takeLaunchFile().then((p) => { if (p) void openPath(p); }).catch(() => undefined);
     const offs = [
       listen<{ type: string; level?: LogLine["level"]; msg?: string }>("engine://event", (e) => e.msg && pushLog(e.level ?? "info", "engine", e.msg)),
@@ -105,6 +129,12 @@ export default function Workspace() {
   }, []);
 
   useEffect(() => setSoundEnabled(settings.sound), [settings.sound]);
+  // autosave a few seconds after each change while there are unsaved edits
+  useEffect(() => {
+    if (!dirty || !isTauri() || doc.features.length === 0) return;
+    const t = setTimeout(() => void support.autosave(docRef.current, path).catch(() => undefined), 3000);
+    return () => clearTimeout(t);
+  }, [doc, dirty, path]);
   useEffect(() => {
     void setWindowTitle(`${dirty ? "● " : ""}${basename(path) ?? doc.name ?? "Untitled"} — Datum Core`);
   }, [dirty, path, doc.name]);
@@ -163,6 +193,7 @@ export default function Workspace() {
   const newDoc = async (example: boolean) => {
     if (!(await confirmDiscard())) return;
     await files.reset().catch(() => undefined);
+    await support.clearAutosave().catch(() => undefined);
     replaceDocument(example ? await kernel.example() : emptyDocument(), null, false);
     if (example) setDirty(true);
   };
@@ -179,6 +210,7 @@ export default function Workspace() {
       setPath(target);
       setLocked(protect);
       setDirty(false);
+      void support.clearAutosave().catch(() => undefined);
       rememberFile(target);
       click(262, 0.5);
       pushLog("info", "file", `saved ${target}${protect ? " (device-locked, AES-256-GCM)" : ""}`);
@@ -201,7 +233,9 @@ export default function Workspace() {
     }
   };
   async function closeApp() {
-    if (await confirmDiscard()) await windowAction("destroy");
+    if (!(await confirmDiscard())) return;
+    await support.clearAutosave().catch(() => undefined);
+    await windowAction("destroy");
   }
 
   // ------------------------------------------------------------ feature commands
@@ -353,7 +387,9 @@ export default function Workspace() {
       { label: "Settings…", shortcut: "Ctrl+,", action: () => setShowSettings(true) },
     ],
     Help: [
+      { label: "Welcome / getting started", action: () => setShowWelcome(true) },
       { label: "Keyboard shortcuts", action: () => setShowAbout(true) },
+      { label: "Open log folder", action: () => void support.openLogs().catch(() => undefined) },
       { label: "About Datum Core", action: () => setShowAbout(true) },
     ],
   };
@@ -418,12 +454,47 @@ export default function Workspace() {
 
       <StatusBar hover={hover} result={result} settings={settings} busy={busy} error={error} path={path} locked={locked} />
 
+      {showWelcome && (
+        <div className="modal-backdrop" onPointerDown={() => setShowWelcome(false)}>
+          <div className="modal glass-strong welcome" onPointerDown={(e) => e.stopPropagation()}>
+            <div className="panel-title">Welcome to Datum Core <button className="icon" onClick={() => setShowWelcome(false)}>×</button></div>
+            <div className="modal-body">
+              <p className="note">Geometry here is an exact field, so booleans, shells, fillets and lattices never fail. Start with one of these:</p>
+              <div className="welcome-grid">
+                <button className="welcome-card" onClick={() => { setShowWelcome(false); void newDoc(true); }}>
+                  <b>Open the example</b><span>A filleted L-bracket with bolt holes and a gyroid-filled gusset.</span>
+                </button>
+                <button className="welcome-card" onClick={() => {
+                  setShowWelcome(false);
+                  if (!catalog) return;
+                  const r = insertFeature(emptyDocument(), catalog, "extrude", "new");
+                  commit(r.doc);
+                  setSelected(r.selected);
+                  setRightTab("properties");
+                }}>
+                  <b>Sketch a part</b><span>Draw a 2D profile, set dimensions and fillets, extrude it.</span>
+                </button>
+                <button className="welcome-card" onClick={() => { setShowWelcome(false); void open(); }}>
+                  <b>Open a design</b><span>Continue from a .datum file, including device-locked ones.</span>
+                </button>
+                <button className="welcome-card" onClick={() => { setShowWelcome(false); setRightTab("robotics"); }}>
+                  <b>Analyse a robot</b><span>Reachability, singularities and self-collision for presets, DH tables or URDF.</span>
+                </button>
+              </div>
+              <p className="note">Tip: press Ctrl+K and type what you want, for example “lighten 20%”, “cut cylinder” or “view top”.</p>
+            </div>
+            <div className="modal-foot">
+              <button className="btn primary" onClick={() => { try { localStorage.setItem("datum.welcomed", "1"); } catch {} setShowWelcome(false); }}>Get started</button>
+            </div>
+          </div>
+        </div>
+      )}
       {showPalette && <CommandPalette menus={menus} intents={intents} onClose={() => setShowPalette(false)} />}
       {showSettings && <SettingsDialog settings={settings} onChange={updateSettings} onClose={() => setShowSettings(false)} />}
       {showAbout && (
         <div className="modal-backdrop" onPointerDown={() => setShowAbout(false)}>
           <div className="modal glass-strong" onPointerDown={(e) => e.stopPropagation()}>
-            <div className="panel-title">Datum Core 1.0 <button className="icon" onClick={() => setShowAbout(false)}>×</button></div>
+            <div className="panel-title">Datum Core {version || "1.0"} <button className="icon" onClick={() => setShowAbout(false)}>×</button></div>
             <div className="modal-body">
               <p className="note">GPU implicit-modeling CAD. Geometry is an exact field program: booleans never fail, and analyses run straight on the field.</p>
               <h3>Shortcuts</h3>

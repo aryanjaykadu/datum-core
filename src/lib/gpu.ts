@@ -34,6 +34,7 @@ export class Viewport {
   private bind: GPUBindGroup | null = null;
   private pickBind: GPUBindGroup | null = null;
   private registers = 0;
+  private depth: GPUTexture | null = null;
   private scene: SceneInfo | null = null;
   private queued = false;
   private interacting = false;
@@ -130,6 +131,7 @@ export class Viewport {
       vertex: { module, entryPoint: "vs" },
       fragment: { module, entryPoint: "fs", targets: [{ format: this.format }] },
       primitive: { topology: "triangle-list" },
+      depthStencil: { format: "depth24plus", depthWriteEnabled: true, depthCompare: "always" },
     });
     this.pickPipeline = this.device.createComputePipeline({ layout: "auto", compute: { module, entryPoint: "pick" } });
     this.registers = registers;
@@ -154,6 +156,8 @@ export class Viewport {
             } }],
           },
           primitive: { topology: "triangle-list" },
+          // hidden behind the part, but never writing depth itself (translucent)
+          depthStencil: { format: "depth24plus", depthWriteEnabled: false, depthCompare: "less" },
         });
         this.cloudUniform = this.device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
       }
@@ -295,8 +299,13 @@ export class Viewport {
     this.resize(this.interacting ? 0.5 : 1);
     this.writeUniforms();
     const enc = this.device.createCommandEncoder();
+    if (!this.depth || this.depth.width !== this.canvas.width || this.depth.height !== this.canvas.height) {
+      this.depth?.destroy();
+      this.depth = this.device.createTexture({ size: [this.canvas.width, this.canvas.height], format: "depth24plus", usage: GPUTextureUsage.RENDER_ATTACHMENT });
+    }
     const pass = enc.beginRenderPass({
       colorAttachments: [{ view: this.context.getCurrentTexture().createView(), loadOp: "clear", storeOp: "store", clearValue: { r: 0.04, g: 0.05, b: 0.06, a: 1 } }],
+      depthStencilAttachment: { view: this.depth.createView(), depthClearValue: 1, depthLoadOp: "clear", depthStoreOp: "discard" },
     });
     pass.setPipeline(this.pipeline);
     pass.setBindGroup(0, this.bind);

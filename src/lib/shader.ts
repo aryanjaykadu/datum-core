@@ -23,6 +23,14 @@ struct PickOut { pos: vec4f, normal: vec4f };
 const MAX_SLOTS: u32 = __MAX_SLOTS__;
 const FAR: f32 = 1e7;
 
+// Depth shared by every pass: monotonic in view distance, 0 at the eye, -> 1 far away.
+// Scaled by the scene size so precision stays useful near the part.
+var<private> g_depth: f32 = 1.0;
+fn view_depth(p: vec3f) -> f32 {
+  let z = max(dot(p - U.eye.xyz, U.forward.xyz), 0.0);
+  return z / (z + U.hi.w * U.lo.w);
+}
+
 fn eval_program(p: vec3f, off: u32, len: u32) -> f32 {
   var s: array<f32, MAX_SLOTS>;
   var out = 0u;
@@ -46,6 +54,7 @@ fn eval_program(p: vec3f, off: u32, len: u32) -> f32 {
       case 13u: { v = s[ins.a] * s[ins.a]; }
       case 14u: { v = sin(s[ins.a]); }
       case 15u: { v = cos(s[ins.a]); }
+      case 16u: { v = select(abs(s[ins.a]), -abs(s[ins.a]), s[ins.b] < 0.0); }
       default: { v = 0.0; }
     }
     out = ins.op >> 8u;
@@ -208,8 +217,16 @@ fn ggx(n: vec3f, v: vec3f, l: vec3f, rough: f32, f0: vec3f) -> vec3f {
   return d * g * f / (4.0 * nv * max(nl, 1e-3));
 }
 
+struct FOut { @location(0) color: vec4f, @builtin(frag_depth) depth: f32 };
+
 @fragment
-fn fs(@builtin(position) frag: vec4f) -> @location(0) vec4f {
+fn fs(@builtin(position) frag: vec4f) -> FOut {
+  g_depth = 1.0;
+  let c = shade(frag);
+  return FOut(c, g_depth);
+}
+
+fn shade(frag: vec4f) -> vec4f {
   let ray = camera_ray(frag.xy);
   let ro = ray[0];
   let rd = ray[1];
@@ -228,6 +245,7 @@ fn fs(@builtin(position) frag: vec4f) -> @location(0) vec4f {
   let h = trace(ro, rd);
   if (h.t < FAR && h.t <= tfloor + 1e-3) {
     let p = ro + rd * h.t;
+    g_depth = view_depth(p);
     if (U.view.z == 1.0) { return vec4f(heat(f32(h.evals) / 2500.0), 1.0); }
     let n = normal_at(p, h);
     if (U.view.z == 2.0) { return vec4f(n * 0.5 + 0.5, 1.0); }
@@ -262,6 +280,7 @@ fn fs(@builtin(position) frag: vec4f) -> @location(0) vec4f {
     col += vec3f(0.95, 0.68, 0.25) * 0.18 * pow(1.0 - abs(dot(n, v)), 3.0) * max(n.x, 0.0) * occ;
   } else if (tfloor < FAR) {
     let p = ro + rd * tfloor;
+    g_depth = view_depth(p);
     let major = pow(10.0, floor(log2(max(U.hi.w * 6.0, 1.0)) * 0.30103));
     let g = abs(fract(p.xy / major + 0.5) - 0.5) * major;
     let width = 0.012 * major + 0.0015 * tfloor * select(U.eye.w, 0.0, U.forward.w > 0.5);

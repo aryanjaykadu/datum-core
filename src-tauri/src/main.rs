@@ -4,6 +4,7 @@ mod commands;
 mod contract;
 mod docfile;
 mod engine;
+mod support;
 
 use std::sync::Mutex;
 use tauri::{DragDropEvent, Emitter, Manager, RunEvent, WindowEvent};
@@ -37,6 +38,7 @@ fn main() {
             }
         }))
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_window_state::Builder::default().build())
         .manage(engine::Engine::new())
         .manage(commands::LaunchFile(Mutex::new(launch_file)))
         .manage(commands::Protection(Mutex::new(false)))
@@ -49,6 +51,12 @@ fn main() {
             commands::new_document,
             commands::read_robot_file,
             commands::take_launch_file,
+            support::autosave_write,
+            support::autosave_read,
+            support::autosave_clear,
+            support::log_line,
+            support::open_log_folder,
+            support::app_info,
         ])
         .on_window_event(|window, event| match event {
             WindowEvent::DragDrop(DragDropEvent::Drop { paths, .. }) => {
@@ -68,6 +76,7 @@ fn main() {
 
     app.run(|handle, event| {
         if let RunEvent::Exit = event {
+            support::log("info", "clean exit");
             handle.state::<engine::Engine>().shutdown();
         }
     });
