@@ -75,6 +75,12 @@ inline Interval sin(Interval a) {
     return {lo, hi};
 }
 inline Interval cos(Interval a) { return sin(a + Interval{std::numbers::pi / 2}); }
+inline Interval copysign(Interval mag, Interval sign) {
+    Interval m = abs(mag);
+    if (sign.lo > 0) return m;
+    if (sign.hi < 0) return -m;
+    return {-m.hi, m.hi};
+}
 
 // ---------------------------------------------------------------- Dual3
 struct Dual3 {
@@ -99,12 +105,18 @@ inline Dual3 sqrt(Dual3 a) {
 }
 inline Dual3 sin(Dual3 a) { return {std::sin(a.v), a.d * std::cos(a.v)}; }
 inline Dual3 cos(Dual3 a) { return {std::cos(a.v), a.d * -std::sin(a.v)}; }
+inline Dual3 copysign(Dual3 mag, Dual3 sign) {
+    double s = sign.v < 0 ? -1.0 : 1.0;
+    Dual3 m = abs(mag);
+    return {s * m.v, m.d * s};
+}
 
 using std::abs;
 using std::cos;
 using std::sin;
 using std::sqrt;
 inline double square(double a) { return a * a; }
+inline double copysign(double mag, double sign) { return sign < 0 ? -std::abs(mag) : std::abs(mag); }
 inline double min(double a, double b) { return a < b ? a : b; }
 inline double max(double a, double b) { return a > b ? a : b; }
 

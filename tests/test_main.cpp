@@ -10,6 +10,7 @@
 #include "dk/document.hpp"
 #include "dk/mesh.hpp"
 #include "dk/robot.hpp"
+#include "dk/sketch.hpp"
 #include "dk/shapes.hpp"
 
 using namespace dk;
@@ -189,7 +190,10 @@ TEST(notch_fillet_is_exact_and_does_not_bulge) {
 TEST(register_allocated_bricks_match_the_program) {
     // reference interpreter for the GPU bytecode: same semantics as raymarch.wgsl
     Graph g;
-    Program f = compile(test_part(g));
+    // includes an extruded concave sketch so copysign is exercised on the GPU path
+    P3 sp = translate(coords(g), {-30, -30, 20});
+    Expr sketch = extrude_profile(sp, tessellate_profile({{0, 0, 3}, {25, 0}, {25, 8}, {8, 8}, {8, 20, 2}, {0, 20}}), 6, false);
+    Program f = compile(unite(test_part(g), sketch));
     BrickGrid grid = build_bricks(f, {-36, -36, -18}, {36, 36, 54}, 12);
     CHECK(grid.max_registers < 32, "registers %zu", grid.max_registers);
     std::vector<double> s(grid.max_registers);
@@ -221,6 +225,7 @@ TEST(register_allocated_bricks_match_the_program) {
                     case Op::Square: v = a * a; break;
                     case Op::Sin: v = std::sin(a); break;
                     case Op::Cos: v = std::cos(a); break;
+                    case Op::CopySign: v = c < 0 ? -std::abs(a) : std::abs(a); break;
                 }
                 out = grid.dst[q];
                 s[out] = v;
@@ -342,6 +347,68 @@ TEST(chain_format_matches_dh_and_urdf_conventions) {
     bool threw = false;
     try { robot_from_json(json::parse(R"({"format": "dh", "joints": [{"a": 100, "lo_deg": 10, "hi_deg": -10}]})")); } catch (const std::exception&) { threw = true; }
     CHECK(threw, "inverted joint limits must be rejected");
+}
+
+static double brute_polygon_sdf(const Polygon2& poly, double x, double y) {
+    double best = 1e300;
+    bool in = false;
+    for (size_t i = 0, n = poly.size(); i < n; ++i) {
+        auto a = poly[i], b = poly[(i + 1) % n];
+        double ex = b[0] - a[0], ey = b[1] - a[1];
+        double h = std::clamp(((x - a[0]) * ex + (y - a[1]) * ey) / (ex * ex + ey * ey), 0.0, 1.0);
+        best = std::min(best, std::hypot(x - a[0] - h * ex, y - a[1] - h * ey));
+        if ((a[1] > y) != (b[1] > y) && x < a[0] + (y - a[1]) * ex / ey) in = !in;  // ray crossing parity
+    }
+    return in ? -best : best;
+}
+
+TEST(polygon_sdf_is_exact_for_concave_profiles) {
+    // an L-shaped (concave) profile, given clockwise to exercise reorientation
+    Polygon2 L = tessellate_profile({{0, 0}, {0, 30}, {10, 30}, {10, 10}, {40, 10}, {40, 0}});
+    Graph g;
+    P3 p = coords(g);
+    Program f = compile(polygon_sdf(p.x, p.y, L));
+    for (int n = 0; n < 3000; ++n) {
+        double x = uniform(-10, 50), y = uniform(-10, 40);
+        double want = brute_polygon_sdf(L, x, y), got = f({x, y, 0});
+        CHECK(std::abs(got - want) < 1e-9, "(%g, %g): %g vs %g", x, y, got, want);
+    }
+    CHECK(std::abs(polygon_area(L) - (30 * 10 + 30 * 10)) < 1e-9, "L area %g", polygon_area(L));
+}
+
+TEST(sketch_fillets_and_validation) {
+    Polygon2 rounded = tessellate_profile({{0, 0, 5}, {20, 0, 5}, {20, 20, 5}, {0, 20, 5}});
+    double exact = 400 - (4 - std::numbers::pi) * 25;  // square with four r = 5 corners
+    CHECK(std::abs(polygon_area(rounded) / exact - 1) < 2e-3, "filleted area %g vs %g", polygon_area(rounded), exact);
+    bool threw = false;
+    try { tessellate_profile({{0, 0}, {10, 10}, {10, 0}, {0, 10}}); } catch (const std::exception&) { threw = true; }
+    CHECK(threw, "a bow-tie profile must be rejected as self-intersecting");
+    threw = false;
+    try { tessellate_profile({{0, 0}, {10, 0}}); } catch (const std::exception&) { threw = true; }
+    CHECK(threw, "two points are not a profile");
+}
+
+TEST(extrude_and_revolve_volumes_match_closed_form) {
+    Graph g;
+    P3 p = coords(g);
+    Polygon2 L = tessellate_profile({{0, 0}, {40, 0}, {40, 10}, {10, 10}, {10, 30}, {0, 30}});
+    Program ext = compile(extrude_profile(p, L, 15, false));
+    Mesh m = dual_contour(ext, {{-1, -1, -1}, {41, 31, 16}, 0.25});
+    double v = mass_properties(m).volume_mm3;
+    CHECK(topology(m).watertight(), "extrusion mesh closed");
+    CHECK(std::abs(v / (600 * 15) - 1) < 1e-3, "extruded L volume %g vs %g", v, 600.0 * 15);
+    Program rev = compile(revolve_profile(p, tessellate_profile({{0, 0}, {20, 0}, {20, 30}, {0, 30}}), 360));
+    Mesh c = dual_contour(rev, {{-21, -1, -21}, {21, 31, 21}, 0.25});
+    double vc = mass_properties(c).volume_mm3, want = std::numbers::pi * 400 * 30;
+    CHECK(std::abs(vc / want - 1) < 2e-3, "revolved cylinder volume %g vs %g", vc, want);
+    Program half = compile(revolve_profile(p, tessellate_profile({{0, 0}, {20, 0}, {20, 30}, {0, 30}}), 180));
+    double vh = mass_properties(dual_contour(half, {{-21, -1, -21}, {21, 31, 21}, 0.25})).volume_mm3;
+    CHECK(std::abs(vh / (want / 2) - 1) < 3e-3, "half revolve volume %g vs %g", vh, want / 2);
+    // GPU bytecode (incl. copysign) agrees with the CPU program
+    BrickGrid grid = build_bricks(ext, {-5, -5, -5}, {45, 45, 45}, 8);
+    size_t surface = 0;
+    for (auto k : grid.kind) surface += k == 2;
+    CHECK(surface > 0 && grid.max_registers < 32, "bricks %zu, registers %zu", surface, grid.max_registers);
 }
 
 TEST(thin_walls_stay_closed_and_manifold) {

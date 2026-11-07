@@ -7,7 +7,7 @@
 namespace dk {
 
 const char* op_name(Op op) {
-    static const char* names[] = {"x", "y", "z", "const", "add", "sub", "mul", "div", "neg", "min", "max", "abs", "sqrt", "square", "sin", "cos"};
+    static const char* names[] = {"x", "y", "z", "const", "add", "sub", "mul", "div", "neg", "min", "max", "abs", "sqrt", "square", "sin", "cos", "copysign"};
     return names[static_cast<int>(op)];
 }
 
@@ -65,6 +65,7 @@ Expr Graph::binary(Op op, Expr a, Expr b) {
             case Op::Div: return constant(va / vb);
             case Op::Min: return constant(std::min(va, vb));
             case Op::Max: return constant(std::max(va, vb));
+            case Op::CopySign: return constant(vb < 0 ? -std::abs(va) : std::abs(va));
             default: break;
         }
     }
@@ -106,6 +107,7 @@ Expr sqrt(Expr a) { return a.graph()->unary(Op::Sqrt, a); }
 Expr square(Expr a) { return a.graph()->unary(Op::Square, a); }
 Expr sin(Expr a) { return a.graph()->unary(Op::Sin, a); }
 Expr cos(Expr a) { return a.graph()->unary(Op::Cos, a); }
+Expr copysign(Expr m, Expr s) { return graph_of(m, s)->binary(Op::CopySign, m, s); }
 
 // ---------------------------------------------------------------- compile / prune
 
@@ -113,6 +115,18 @@ Expr cos(Expr a) { return a.graph()->unary(Op::Cos, a); }
 // source index to its Instr; `remap` renumbers operands as they are emitted.
 template <class GetInstr>
 static Program linearize(uint32_t root, size_t count, GetInstr node_at) {
+    // Sethi-Ullman-style ordering: evaluate the taller operand first so fewer values are live
+    // at once (fewer GPU registers). Operands always have smaller indices, so one forward
+    // pass gives every subtree height.
+    std::vector<uint16_t> height(count, 0);
+    for (uint32_t i = 0; i <= root && i < count; ++i) {
+        Instr in = node_at(i);
+        int n = arity(in.op);
+        uint16_t h = 0;
+        if (n >= 1 && in.a < i) h = std::max(h, height[in.a]);
+        if (n >= 2 && in.b < i) h = std::max(h, height[in.b]);
+        height[i] = uint16_t(std::min(h + 1, 65535));
+    }
     std::vector<uint32_t> order;
     std::vector<uint8_t> state(count, 0);  // 0 new, 1 on stack, 2 done
     std::vector<std::pair<uint32_t, bool>> stack{{root, false}};
@@ -129,8 +143,11 @@ static Program linearize(uint32_t root, size_t count, GetInstr node_at) {
         stack.push_back({id, true});
         Instr in = node_at(id);
         int n = arity(in.op);
-        if (n >= 2 && state[in.b] == 0) stack.push_back({in.b, false});
-        if (n >= 1 && state[in.a] == 0) stack.push_back({in.a, false});
+        // the child pushed last is expanded first
+        bool b_first = n >= 2 && height[in.b] > height[in.a];
+        uint32_t first = b_first ? in.b : in.a, second = b_first ? in.a : in.b;
+        if (n >= 2 && state[second] == 0) stack.push_back({second, false});
+        if (n >= 1 && state[first] == 0) stack.push_back({first, false});
     }
     std::vector<uint32_t> slot(count, 0);
     Program p;

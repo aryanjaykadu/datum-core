@@ -17,7 +17,8 @@
 
 namespace dk {
 
-enum class Op : uint8_t { X, Y, Z, Const, Add, Sub, Mul, Div, Neg, Min, Max, Abs, Sqrt, Square, Sin, Cos };
+// Opcode values are part of the GPU bytecode: append new ops, never reorder.
+enum class Op : uint8_t { X, Y, Z, Const, Add, Sub, Mul, Div, Neg, Min, Max, Abs, Sqrt, Square, Sin, Cos, CopySign };
 
 constexpr int arity(Op op) {
     switch (op) {
@@ -92,6 +93,7 @@ Expr sqrt(Expr a);
 Expr square(Expr a);
 Expr sin(Expr a);
 Expr cos(Expr a);
+Expr copysign(Expr magnitude, Expr sign);  // |magnitude| with the sign of `sign`
 
 // ---------------------------------------------------------------- Program
 struct Instr {
@@ -148,6 +150,7 @@ T Program::eval(const T& x, const T& y, const T& z, std::vector<T>& s) const {
             case Op::Square: s[i] = square(s[in.a]); break;
             case Op::Sin: s[i] = sin(s[in.a]); break;
             case Op::Cos: s[i] = cos(s[in.a]); break;
+            case Op::CopySign: s[i] = copysign(s[in.a], s[in.b]); break;
         }
     }
     return s.back();

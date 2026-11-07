@@ -48,6 +48,7 @@ fn eval_program(p: vec3f, off: u32, len: u32) -> f32 {
             case 13u: { v = s[ins.a] * s[ins.a]; }
             case 14u: { v = sin(s[ins.a]); }
             case 15u: { v = cos(s[ins.a]); }
+      case 16u: { v = select(abs(s[ins.a]), -abs(s[ins.a]), s[ins.b] < 0.0); }
             default: { v = 0.0; }
         }
         out = ins.op >> 8u;

@@ -1,6 +1,7 @@
 #include "dk/document.hpp"
 
 #include "dk/robot.hpp"
+#include "dk/sketch.hpp"
 
 #include <functional>
 #include <numbers>
@@ -170,6 +171,33 @@ struct Builder {
             for (int i = 1; i < n; ++i) acc = unite(acc, single_input(f, id, rotate_z(p, step * i)));
             return acc;
         }
+        if (type == "extrude" || type == "revolve") {
+            std::vector<ProfilePoint> prof;
+            auto it = params.find("profile");
+            if (it == params.end() || !it->is_array()) fail(id, "needs a profile (list of [x, y] or [x, y, fillet] points)");
+            for (auto& pt : *it) {
+                if (!pt.is_array() || pt.size() < 2) fail(id, "profile points must be [x, y] or [x, y, fillet]");
+                double r = pt.size() > 2 ? pt[2].get<double>() : 0.0;
+                if (r < 0) fail(id, "fillet radii must be >= 0");
+                prof.push_back({pt[0].get<double>(), pt[1].get<double>(), r});
+            }
+            Polygon2 poly;
+            try {
+                poly = tessellate_profile(prof);
+            } catch (const std::exception& e) {
+                fail(id, e.what());
+            }
+            P3 q = local(p, params);
+            if (type == "extrude") {
+                double dist = positive(params, "distance", 10, id);
+                return extrude_profile(q, poly, dist, params.value("direction", std::string("one side")) == "symmetric");
+            }
+            for (auto& v : poly)
+                if (v[0] < -1e-9) fail(id, "a revolve profile must stay on one side of the axis (x >= 0)");
+            double angle = num(params, "angle", 360);
+            if (!(angle > 0 && angle <= 360)) fail(id, "revolve angle must be in (0, 360]");
+            return revolve_profile(q, poly, angle);
+        }
         if (type == "robot_arm") {
             std::string key = params.value("preset", std::string("ur5"));
             const json* custom = nullptr;
@@ -270,6 +298,15 @@ json feature_catalog() {
                             {"params", {{"count", number("Count", 3, 1, "")}, {"step", vec3("Step", {20, 0, 0})}}}}},
         {"pattern_circular", {{"label", "Circular pattern"}, {"group", "Pattern"}, {"inputs", 1},
                               {"params", {{"count", number("Count", 6, 1, "")}, {"angle", number("Total angle", 360, 0, "deg")}}}}},
+        {"extrude", {{"label", "Extrude sketch"}, {"group", "Sketch"}, {"inputs", 0},
+                     {"params", with_placement({{"profile", json{{"kind", "profile"}, {"label", "Profile"},
+                                                                 {"default", json::array({{0, 0, 0}, {40, 0, 0}, {40, 25, 0}, {0, 25, 0}})}}},
+                                                {"distance", number("Distance", 10, 0.001)},
+                                                {"direction", choice("Direction", {"one side", "symmetric"})}})}}},
+        {"revolve", {{"label", "Revolve sketch"}, {"group", "Sketch"}, {"inputs", 0},
+                     {"params", with_placement({{"profile", json{{"kind", "profile"}, {"label", "Profile (x = radius)"},
+                                                                 {"default", json::array({{0, 0, 0}, {20, 0, 2}, {20, 30, 2}, {0, 30, 0}})}}},
+                                                {"angle", number("Angle", 360, 0.1, "deg")}})}}},
         {"robot_arm", {{"label", "Robot arm"}, {"group", "Robotics"}, {"inputs", 0},
                        {"params", {{"preset", choice("Model", {"ur5", "puma560", "planar3r"})}, {"center", vec3("Base position", {0, 0, 0})},
                                    {"joints_a", vec3("Joints 1-3 (deg)", {0, -90, 0})}, {"joints_b", vec3("Joints 4-6 (deg)", {-90, 0, 0})},
