@@ -1,36 +1,36 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Datum Core
 
-## Getting Started
+A Windows desktop CAD app built on a GPU implicit-modeling kernel. Geometry is an exact field program, so booleans never fail, and analyses run directly on the field.
 
-First, run the development server:
+| Part | Path | What it is |
+|---|---|---|
+| Desktop shell | `src-tauri/` (Rust, Tauri 2) | Window, `.msi` bundle, `.datum` file association, kernel sidecar lifecycle (Job Object), strict JSON-RPC contract, AES-256-GCM device-locked files (DPAPI-wrapped keys) |
+| Workspace UI | `src/` (Next.js static export) | Full-bleed WebGPU ray-marched viewport, floating glass panels, feature tree, property editor, feature graph, analysis / quote / robotics tabs, Ctrl+K command palette |
+| Kernel | `../kernel/` (C++20, separate repo) | Field DAG, interval pruning, dual contouring, GPU brick bytecode, mass properties, analyses, robotics; built as `dk_engine.exe` |
+| Legacy engine | `backend/` (Python) | v1 SolidWorks-COM analysis engine; not used by the current app |
+
+## Build
+
+Prerequisites: Node 20+, Rust (MSVC) with Visual Studio Build Tools (C++ workload), and the kernel toolchain (`python -m pip install ziglang cmake ninja`).
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+../kernel/build.cmd                                              # builds dk_engine.exe and the tests
+cp ../kernel/build/dk_engine.exe src-tauri/bin/dk_engine-x86_64-pc-windows-msvc.exe
+npm install
+npx tauri build --bundles msi
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Output: `src-tauri/target/release/bundle/msi/Datum Core_1.0.0_x64_en-US.msi`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Tests
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+../kernel/build/dk_tests.exe                                     # kernel: geometry, meshing, robotics
+python ../kernel/tests/engine_smoke.py ../kernel/build/dk_engine.exe   # engine protocol
+npm run test:urdf                                                # URDF import against the real kernel
+cd src-tauri && cargo test --release                             # .datum encryption
+```
 
-## Learn More
+## What the numbers are
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Mass properties and inertia are exact for the meshed field. The drop test is an energy-balance screen, not FEA. Quotes are geometry-based estimates until a manufacturing-partner API is configured. Robot reachability uses positional dexterity (the inverse condition number of the translational Jacobian) and a capsule self-collision model.
