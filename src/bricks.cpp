@@ -18,6 +18,7 @@ size_t allocate_registers(const Program& p, std::vector<Instr>& code, std::vecto
         int k = arity(p.code[i].op);
         if (k >= 1) last_use[p.code[i].a] = i;
         if (k >= 2) last_use[p.code[i].b] = i;
+        if (k >= 3) last_use[p.code[i].d] = i;
     }
     last_use[n - 1] = uint32_t(n);  // the result stays live
     std::vector<uint16_t> reg(n);
@@ -26,10 +27,11 @@ size_t allocate_registers(const Program& p, std::vector<Instr>& code, std::vecto
     for (uint32_t i = 0; i < n; ++i) {
         Instr in = p.code[i];
         int k = arity(in.op);
-        uint16_t ra = k >= 1 ? reg[in.a] : 0, rb = k >= 2 ? reg[in.b] : 0;
+        uint16_t ra = k >= 1 ? reg[in.a] : 0, rb = k >= 2 ? reg[in.b] : 0, rd = k >= 3 ? reg[in.d] : 0;
         // operands dying here free their slot first, so the result may overwrite one
         if (k >= 1 && last_use[in.a] == i) free_slots.push_back(ra);
         if (k >= 2 && last_use[in.b] == i && in.b != in.a) free_slots.push_back(rb);
+        if (k >= 3 && last_use[in.d] == i && in.d != in.a && in.d != in.b) free_slots.push_back(rd);
         uint16_t r;
         if (!free_slots.empty()) {
             r = free_slots.back();
@@ -41,6 +43,7 @@ size_t allocate_registers(const Program& p, std::vector<Instr>& code, std::vecto
         if (last_use[i] == 0 && i != n - 1) free_slots.push_back(r);  // dead value
         in.a = ra;
         in.b = rb;
+        in.d = rd;
         code.push_back(in);
         dst.push_back(r);
     }

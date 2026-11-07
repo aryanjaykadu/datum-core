@@ -1,7 +1,10 @@
 #include "dk/document.hpp"
 
 #include "dk/robot.hpp"
+#include "dk/meshfield.hpp"
 #include "dk/sketch.hpp"
+
+#include <filesystem>
 
 #include <functional>
 #include <numbers>
@@ -171,6 +174,29 @@ struct Builder {
             for (int i = 1; i < n; ++i) acc = unite(acc, single_input(f, id, rotate_z(p, step * i)));
             return acc;
         }
+        if (type == "import_mesh") {
+            std::string path = params.value("path", std::string());
+            if (path.empty()) fail(id, "no mesh file");
+            int cells = int(num(params, "resolution", 128));
+            if (cells < 16 || cells > 400) fail(id, "resolution must be 16..400 cells");
+            std::error_code ec;
+            auto stamp = std::filesystem::last_write_time(std::filesystem::path(path), ec);
+            if (ec) fail(id, "mesh file not found: " + path);
+            // bake once per (file, version, resolution) for the life of the engine
+            static std::map<std::string, int> baked;
+            std::string key = path + "|" + std::to_string(static_cast<long long>(stamp.time_since_epoch().count())) + "|" + std::to_string(cells);
+            auto it = baked.find(key);
+            if (it == baked.end()) {
+                try {
+                    auto grid = std::make_shared<const SdfGrid>(bake_sdf(load_mesh(path), cells));
+                    it = baked.emplace(key, register_grid(grid)).first;
+                } catch (const std::exception& e) {
+                    fail(id, e.what());
+                }
+            }
+            P3 q = local(p, params);
+            return sample_grid(it->second, q.x, q.y, q.z);
+        }
         if (type == "extrude" || type == "revolve") {
             std::vector<ProfilePoint> prof;
             auto it = params.find("profile");
@@ -307,6 +333,10 @@ json feature_catalog() {
                      {"params", with_placement({{"profile", json{{"kind", "profile"}, {"label", "Profile (x = radius)"},
                                                                  {"default", json::array({{0, 0, 0}, {20, 0, 2}, {20, 30, 2}, {0, 30, 0}})}}},
                                                 {"angle", number("Angle", 360, 0.1, "deg")}})}}},
+        {"import_mesh", {{"label", "Imported part"}, {"group", "Import"}, {"inputs", 0}, {"hidden", true},
+                         {"params", with_placement({{"path", json{{"kind", "file"}, {"label", "Mesh file"}, {"default", ""}}},
+                                                    {"source", json{{"kind", "file"}, {"label", "Imported from"}, {"default", ""}}},
+                                                    {"resolution", number("Resolution (cells)", 128, 16, "")}})}}},
         {"robot_arm", {{"label", "Robot arm"}, {"group", "Robotics"}, {"inputs", 0},
                        {"params", {{"preset", choice("Model", {"ur5", "puma560", "planar3r"})}, {"center", vec3("Base position", {0, 0, 0})},
                                    {"joints_a", vec3("Joints 1-3 (deg)", {0, -90, 0})}, {"joints_b", vec3("Joints 4-6 (deg)", {-90, 0, 0})},

@@ -1,5 +1,6 @@
 // Kernel tests. Each check states the property it guards; tolerances are physical (mm).
 #include <cstdio>
+#include <filesystem>
 #include <functional>
 #include <numbers>
 #include <random>
@@ -10,6 +11,7 @@
 #include "dk/document.hpp"
 #include "dk/mesh.hpp"
 #include "dk/robot.hpp"
+#include "dk/meshfield.hpp"
 #include "dk/sketch.hpp"
 #include "dk/shapes.hpp"
 
@@ -226,6 +228,7 @@ TEST(register_allocated_bricks_match_the_program) {
                     case Op::Sin: v = std::sin(a); break;
                     case Op::Cos: v = std::cos(a); break;
                     case Op::CopySign: v = c < 0 ? -std::abs(a) : std::abs(a); break;
+                    case Op::Grid: v = grid_eval(int(in.c), a, c, s[in.d]); break;
                 }
                 out = grid.dst[q];
                 s[out] = v;
@@ -425,6 +428,52 @@ TEST(extrude_and_revolve_volumes_match_closed_form) {
     size_t surface = 0;
     for (auto k : grid.kind) surface += k == 2;
     CHECK(surface > 0 && grid.max_registers < 32, "bricks %zu, registers %zu", surface, grid.max_registers);
+}
+
+TEST(imported_mesh_bakes_to_an_accurate_field) {
+    // export a known solid with the kernel's own mesher, re-import it as a sampled grid
+    Graph g0;
+    P3 p0 = coords(g0);
+    Program truth = compile(subtract(box(p0, {40, 20, 10}), cylinder_z(p0, 5, 30)));
+    Mesh m = dual_contour(truth, {{-20.1, -10.1, -5.1}, {20.1, 10.1, 5.1}, 0.2});
+    std::string path = (std::filesystem::temp_directory_path() / "dk_import_test.obj").string();
+    CHECK(write_obj(m, path), "write obj");
+    SdfGrid grid = bake_sdf(load_mesh(path), 160);
+    int id = register_grid(std::make_shared<const SdfGrid>(grid));
+    Graph g;
+    P3 p = coords(g);
+    Program f = compile(sample_grid(id, p.x, p.y, p.z));
+    double worst = 0;
+    for (int n = 0; n < 4000; ++n) {
+        Vec3 q{uniform(-20, 20), uniform(-10.5, 10.5), uniform(-5.5, 5.5)};  // inside the grid
+        if (std::abs(truth(q)) > 1.5) continue;  // near the surface, where the reference is exact
+        worst = std::max(worst, std::abs(f(q) - truth(q)));
+    }
+    CHECK(worst < 0.75 * grid.h, "imported field error %g mm (cell %g mm)", worst, grid.h);
+    double exact = 40 * 20 * 10 - std::numbers::pi * 25 * 10;
+    double vol = mass_properties(dual_contour(f, {{-21, -11, -6}, {21, 11, 6}, 0.2})).volume_mm3;
+    CHECK(std::abs(vol / exact - 1) < 0.01, "imported volume %g vs %g", vol, exact);
+    // interval bound is conservative and the program composes with transforms
+    Interval b = f.bounds({1, 3}, {-1, 1}, {-1, 1});
+    for (int n = 0; n < 200; ++n) {
+        double v = f({uniform(1, 3), uniform(-1, 1), uniform(-1, 1)});
+        CHECK(b.lo <= v && v <= b.hi, "grid value %g outside interval [%g, %g]", v, b.lo, b.hi);
+    }
+    // outside the grid the field must never exceed the true distance (no overshoot)
+    for (int n = 0; n < 500; ++n) {
+        Vec3 q{uniform(-60, 60), uniform(-40, 40), uniform(-30, 30)};
+        Vec3 c{std::clamp(q.x, -20.0, 20.0), std::clamp(q.y, -10.0, 10.0), std::clamp(q.z, -5.0, 5.0)};
+        double lower_true = length(q - c);  // the part is inside its 40 x 20 x 10 box
+        if (lower_true > 2) CHECK(f(q) <= lower_true + std::sqrt(40 * 40 + 20 * 20 + 10 * 10.0), "grid overshoots far away");
+        if (std::abs(q.x) > 22 || std::abs(q.y) > 12 || std::abs(q.z) > 7) {
+            // nearest surface point is at least as far as the bounding box: f must not exceed true distance
+            // (true distance <= distance to the far corner region); check the stronger property f <= dist to part
+            double true_d = truth(q);  // exact outside the box faces' extensions
+            CHECK(f(q) <= true_d + grid.h, "outside sample %g exceeds true distance %g", f(q), true_d);
+        }
+    }
+    Program moved = compile(sample_grid(id, p.x - 100, p.y, p.z));
+    CHECK(std::abs(moved({107, 0, 0}) - f({7, 0, 0})) < 1e-12, "translated sampling");
 }
 
 TEST(thin_walls_stay_closed_and_manifold) {

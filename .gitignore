@@ -3,3 +3,4 @@ out/
 viewport/scene.json
 __pycache__/
 *.stl
+tests/data/

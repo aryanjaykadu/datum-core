@@ -18,12 +18,13 @@
 namespace dk {
 
 // Opcode values are part of the GPU bytecode: append new ops, never reorder.
-enum class Op : uint8_t { X, Y, Z, Const, Add, Sub, Mul, Div, Neg, Min, Max, Abs, Sqrt, Square, Sin, Cos, CopySign };
+enum class Op : uint8_t { X, Y, Z, Const, Add, Sub, Mul, Div, Neg, Min, Max, Abs, Sqrt, Square, Sin, Cos, CopySign, Grid };
 
 constexpr int arity(Op op) {
     switch (op) {
         case Op::X: case Op::Y: case Op::Z: case Op::Const: return 0;
         case Op::Neg: case Op::Abs: case Op::Sqrt: case Op::Square: case Op::Sin: case Op::Cos: return 1;
+        case Op::Grid: return 3;  // sample point x, y, z; c = grid id
         default: return 2;
     }
 }
@@ -33,9 +34,9 @@ struct Node {
     Op op;
     uint32_t a = 0, b = 0;
     double c = 0;
+    uint32_t d = 0;  // third operand (Op::Grid only)
     bool operator==(const Node&) const = default;
 };
-
 class Graph;
 
 class Expr {
@@ -59,6 +60,7 @@ class Graph {
     Expr constant(double v) { return add({Op::Const, 0, 0, v}); }
     Expr unary(Op op, Expr a);
     Expr binary(Op op, Expr a, Expr b);
+    Expr grid(int id, Expr x, Expr y, Expr z);
     const Node& node(uint32_t id) const { return nodes_[id]; }
     size_t size() const { return nodes_.size(); }
 
@@ -94,13 +96,20 @@ Expr square(Expr a);
 Expr sin(Expr a);
 Expr cos(Expr a);
 Expr copysign(Expr magnitude, Expr sign);  // |magnitude| with the sign of `sign`
+Expr sample_grid(int id, Expr x, Expr y, Expr z);  // trilinear signed-distance grid
 
 // ---------------------------------------------------------------- Program
 struct Instr {
     Op op;
     uint32_t a = 0, b = 0;  // indices of earlier instructions
     double c = 0;
+    uint32_t d = 0;         // third operand (Op::Grid)
 };
+
+// Sampled signed-distance grids (imported meshes), looked up by id. Defined in meshfield.cpp.
+double grid_eval(int id, double x, double y, double z);
+Interval grid_eval(int id, Interval x, Interval y, Interval z);
+Dual3 grid_eval(int id, Dual3 x, Dual3 y, Dual3 z);
 
 class Program {
   public:
@@ -151,6 +160,7 @@ T Program::eval(const T& x, const T& y, const T& z, std::vector<T>& s) const {
             case Op::Sin: s[i] = sin(s[in.a]); break;
             case Op::Cos: s[i] = cos(s[in.a]); break;
             case Op::CopySign: s[i] = copysign(s[in.a], s[in.b]); break;
+            case Op::Grid: s[i] = grid_eval(int(in.c), s[in.a], s[in.b], s[in.d]); break;
         }
     }
     return s.back();

@@ -19,6 +19,7 @@
 //   robot_reach {preset | robot, center, samples, threshold}
 //                                 reachable workspace + singularity lock zones (binary voxels:
 //                                 x, y, z, best dexterity, worst dexterity as float32)
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cstring>
@@ -31,6 +32,7 @@
 #include "dk/bricks.hpp"
 #include "dk/document.hpp"
 #include "dk/mesh.hpp"
+#include "dk/meshfield.hpp"
 #include "dk/robot.hpp"
 
 #ifdef _WIN32
@@ -133,11 +135,37 @@ std::string encode_scene(const BrickGrid& g) {
         uint32_t e[3] = {g.kind[b], g.offset[b], g.length[b]};
         put(e, sizeof e);
     }
+    // sampled grids used by the program: global registry id -> local index
+    std::vector<int> used;
+    for (auto& in : g.code)
+        if (in.op == Op::Grid && std::find(used.begin(), used.end(), int(in.c)) == used.end()) used.push_back(int(in.c));
     for (size_t i = 0; i < g.code.size(); ++i) {
-        uint32_t w[3] = {uint32_t(g.code[i].op) | (uint32_t(g.dst[i]) << 8), g.code[i].a, g.code[i].b};
-        float c = float(g.code[i].c);
+        const Instr& in = g.code[i];
+        uint32_t word = uint32_t(in.op) | (uint32_t(g.dst[i]) << 8);
+        float c = float(in.c);
+        if (in.op == Op::Grid) {
+            word |= uint32_t(std::find(used.begin(), used.end(), int(in.c)) - used.begin()) << 24;
+            c = float(in.d);  // the z operand's register slot
+        }
+        uint32_t w[3] = {word, in.a, in.b};
         put(w, sizeof w);
         put(&c, 4);
+    }
+    // grid block (32-bit words): count | per grid: lo.x lo.y lo.z h (f32), nx ny nz offset (u32) | data (f32)
+    uint32_t count = uint32_t(used.size());
+    put(&count, 4);
+    uint32_t offset = 1 + 8 * count;
+    for (int id : used) {
+        const SdfGrid& s = grid_by_id(id);
+        float hdr[4] = {float(s.lo.x), float(s.lo.y), float(s.lo.z), float(s.h)};
+        uint32_t dims[4] = {uint32_t(s.nx), uint32_t(s.ny), uint32_t(s.nz), offset};
+        put(hdr, sizeof hdr);
+        put(dims, sizeof dims);
+        offset += uint32_t(s.d.size());
+    }
+    for (int id : used) {
+        const SdfGrid& s = grid_by_id(id);
+        put(s.d.data(), s.d.size() * sizeof(float));
     }
     return out;
 }
@@ -163,6 +191,14 @@ json evaluate(Session& s, const json& params) {
     double t_mesh = ms();
 
     MassProperties mp = mass_properties(mesh);
+    // Report the box of the meshed result: the interval search above only brackets the part
+    // (loosely for imported grids), and the quote sizes its stock from this box.
+    if (!mesh.vertices.empty()) {
+        lo = {1e300, 1e300, 1e300};
+        hi = {-1e300, -1e300, -1e300};
+        for (auto& v : mesh.vertices)
+            for (int a = 0; a < 3; ++a) lo[a] = std::min(lo[a], v[a]), hi[a] = std::max(hi[a], v[a]);
+    }
     Topology topo = topology(mesh);
     s.material = doc.value("material", std::string("al6061t6"));
     const Material& mat = material(s.material);

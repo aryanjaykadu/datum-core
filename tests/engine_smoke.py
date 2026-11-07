@@ -49,6 +49,8 @@ g = res["geometry"]
 check(set(c) == {"system_id", "kernel_metrics", "commerce_and_supply_chain", "security_forensics", "advanced_fea_and_cad", "telemetry_and_4d"}, "contract has exactly the six blocks")
 check(g["watertight"], f"draft mesh watertight ({g['triangles']} tris, cell {g['cell_mm']:.3f} mm, {dt*1000:.0f} ms round trip)")
 check(abs(c["telemetry_and_4d"]["mass_kg"] - 0.0854) < 0.002, f"mass {c['telemetry_and_4d']['mass_kg']*1000:.2f} g (bracket demo: 85.4 g)")
+size = [hi - lo for lo, hi in zip(g["bbox_min"], g["bbox_max"])]
+check(all(abs(a - b) < 0.6 for a, b in zip(size, [80, 40, 50])), f"bounding box {[round(v, 2) for v in size]} mm is the true 80 x 40 x 50")
 check(c["kernel_metrics"]["dag_nodes_computed"] == 14, f"dag nodes {c['kernel_metrics']['dag_nodes_computed']}")
 check(not c["security_forensics"]["steganography_detected"], "no hidden cavities in the clean bracket")
 print("  quote", c["commerce_and_supply_chain"], "access", res["analysis"]["access"])
@@ -89,7 +91,7 @@ check(res5["contract"]["security_forensics"]["steganography_detected"], "a plant
 call("evaluate", {"document": doc})
 scene, blob = call("scene", {"bricks": 24})
 n, regs, count, code = struct.unpack_from("<4I", blob)
-check(n == 24 and count == 24**3 and len(blob) == 16 + 24 + count * 12 + code * 16, f"scene frame: {len(blob)} bytes, {regs} registers")
+check(n == 24 and count == 24**3 and len(blob) == 16 + 24 + count * 12 + code * 16 + 4, f"scene frame: {len(blob)} bytes, {regs} registers")
 mesh, blob = call("mesh")
 magic, ver, nv, ni = struct.unpack_from("<4I", blob)
 check(magic == 0x48534D44 and len(blob) == 16 + nv * 24 + ni * 4, f"mesh frame: {nv} vertices")

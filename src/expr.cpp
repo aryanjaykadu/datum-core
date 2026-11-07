@@ -7,7 +7,7 @@
 namespace dk {
 
 const char* op_name(Op op) {
-    static const char* names[] = {"x", "y", "z", "const", "add", "sub", "mul", "div", "neg", "min", "max", "abs", "sqrt", "square", "sin", "cos", "copysign"};
+    static const char* names[] = {"x", "y", "z", "const", "add", "sub", "mul", "div", "neg", "min", "max", "abs", "sqrt", "square", "sin", "cos", "copysign", "grid"};
     return names[static_cast<int>(op)];
 }
 
@@ -17,6 +17,7 @@ size_t Graph::Hash::operator()(const Node& n) const {
     size_t h = static_cast<size_t>(n.op);
     h = h * 1000003u ^ n.a;
     h = h * 1000003u ^ n.b;
+    h = h * 1000003u ^ n.d;
     h = h * 1000003u ^ static_cast<size_t>(bits ^ (bits >> 29));
     return h;
 }
@@ -108,6 +109,12 @@ Expr square(Expr a) { return a.graph()->unary(Op::Square, a); }
 Expr sin(Expr a) { return a.graph()->unary(Op::Sin, a); }
 Expr cos(Expr a) { return a.graph()->unary(Op::Cos, a); }
 Expr copysign(Expr m, Expr s) { return graph_of(m, s)->binary(Op::CopySign, m, s); }
+Expr Graph::grid(int id, Expr x, Expr y, Expr z) { return add({Op::Grid, x.id(), y.id(), double(id), z.id()}); }
+Expr sample_grid(int id, Expr x, Expr y, Expr z) {
+    graph_of(x, y);
+    graph_of(y, z);
+    return x.graph()->grid(id, x, y, z);
+}
 
 // ---------------------------------------------------------------- compile / prune
 
@@ -125,6 +132,7 @@ static Program linearize(uint32_t root, size_t count, GetInstr node_at) {
         uint16_t h = 0;
         if (n >= 1 && in.a < i) h = std::max(h, height[in.a]);
         if (n >= 2 && in.b < i) h = std::max(h, height[in.b]);
+        if (n >= 3 && in.d < i) h = std::max(h, height[in.d]);
         height[i] = uint16_t(std::min(h + 1, 65535));
     }
     std::vector<uint32_t> order;
@@ -146,6 +154,7 @@ static Program linearize(uint32_t root, size_t count, GetInstr node_at) {
         // the child pushed last is expanded first
         bool b_first = n >= 2 && height[in.b] > height[in.a];
         uint32_t first = b_first ? in.b : in.a, second = b_first ? in.a : in.b;
+        if (n >= 3 && state[in.d] == 0) stack.push_back({in.d, false});
         if (n >= 2 && state[second] == 0) stack.push_back({second, false});
         if (n >= 1 && state[first] == 0) stack.push_back({first, false});
     }
@@ -157,6 +166,7 @@ static Program linearize(uint32_t root, size_t count, GetInstr node_at) {
         int n = arity(in.op);
         if (n >= 1) in.a = slot[in.a];
         if (n >= 2) in.b = slot[in.b];
+        if (n >= 3) in.d = slot[in.d];
         slot[id] = static_cast<uint32_t>(p.code.size());
         p.code.push_back(in);
     }
@@ -167,7 +177,7 @@ Program compile(Expr root) {
     const Graph& g = *root.graph();
     return linearize(root.id(), g.size(), [&](uint32_t id) {
         const Node& n = g.node(id);
-        return Instr{n.op, n.a, n.b, n.c};
+        return Instr{n.op, n.a, n.b, n.c, n.d};
     });
 }
 
@@ -193,6 +203,7 @@ Program Program::prune(Interval x, Interval y, Interval z) const {
         int n = arity(in.op);
         if (n >= 1) in.a = alias[in.a];
         if (n >= 2) in.b = alias[in.b];
+        if (n >= 3) in.d = alias[in.d];
         return in;
     });
 }
@@ -206,6 +217,7 @@ std::string Program::disassemble() const {
         if (in.op == Op::Const) out << ' ' << in.c;
         if (n >= 1) out << " %" << in.a;
         if (n >= 2) out << " %" << in.b;
+        if (n >= 3) out << " %" << in.d;
         out << '\n';
     }
     return out.str();
