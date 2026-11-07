@@ -48,3 +48,7 @@ Autosave runs every few seconds while there are unsaved changes; logs live in `%
 ## What the numbers are
 
 Mass properties and inertia are exact for the meshed field. The drop test is an energy-balance screen, not FEA. Quotes are geometry-based estimates until a manufacturing-partner API is configured. Robot reachability uses positional dexterity (the inverse condition number of the translational Jacobian) and a capsule self-collision model.
+
+## License
+
+MIT — see [LICENSE](LICENSE). The bundled nlohmann/json (kernel/third_party) is MIT; the STEP converter uses OpenCASCADE via cascadio (LGPL-2.1).
