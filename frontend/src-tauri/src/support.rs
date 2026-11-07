@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 use std::io::Write;
 use std::path::PathBuf;
 
-fn data_dir() -> PathBuf {
+pub fn data_dir() -> PathBuf {
     let base = std::env::var_os("LOCALAPPDATA").map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
     let dir = base.join("DatumCore");
     let _ = std::fs::create_dir_all(dir.join("logs"));

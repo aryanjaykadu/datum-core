@@ -5,7 +5,7 @@ struct Uniforms {
   eye: vec4f,      // xyz, w = tan(fov/2) (perspective) or half-height in mm (ortho)
   forward: vec4f,  // xyz, w = 1 ortho / 0 perspective
   right: vec4f,    // xyz, w = aspect
-  up: vec4f,
+  up: vec4f,       // xyz, w = material look index
   lo: vec4f,       // grid min, w = n
   hi: vec4f,       // grid max, w = brick size
   view: vec4f,     // width, height, mode (0 shaded 1 cost 2 normals 3 xray), floor z
@@ -14,7 +14,7 @@ struct Uniforms {
   shift: vec4f,    // lens shift (NDC) x, y to centre the open area; z = high quality (shadows)
 };
 struct Instr { op: u32, a: u32, b: u32, c: f32 };
-struct PickOut { pos: vec4f, normal: vec4f };
+struct PickOut { pos: vec4f, normal: vec4f, probe: vec4f };
 
 @group(0) @binding(0) var<uniform> U: Uniforms;
 @group(0) @binding(1) var<storage, read> bricks: array<u32>;
@@ -313,9 +313,16 @@ fn shade(frag: vec4f) -> vec4f {
       return vec4f(pow(mix(vec3f(0.02, 0.05, 0.06), vec3f(0.0, 1.0, 0.85), fx), vec3f(1.0 / 2.2)), 1.0);
     }
     if (U.view.z == 4.0) { return vec4f(dfm(p, n, v, key), 1.0); }
+    // material looks: al6061, al7075, Ti-6Al-4V, 316L, S355, PA12
     var base = vec3f(0.90, 0.91, 0.92);  // bead-blasted aluminium
     var metal = 0.9;
     var rough = 0.34;
+    let look = u32(U.up.w);
+    if (look == 1u) { base = vec3f(0.86, 0.87, 0.89); rough = 0.26; }
+    else if (look == 2u) { base = vec3f(0.62, 0.60, 0.57); rough = 0.40; }
+    else if (look == 3u) { base = vec3f(0.78, 0.79, 0.80); metal = 1.0; rough = 0.20; }
+    else if (look == 4u) { base = vec3f(0.42, 0.43, 0.45); metal = 0.85; rough = 0.52; }
+    else if (look == 5u) { base = vec3f(0.92, 0.91, 0.87); metal = 0.0; rough = 0.72; }
     if (h.cap) {
       let hatch = step(0.5, fract((p.x + p.y + p.z) / (0.12 * U.hi.w)));
       base = mix(vec3f(0.0, 0.55, 0.48), vec3f(0.0, 0.70, 0.60), hatch);
@@ -365,6 +372,8 @@ fn pick() {
   if (h.t >= FAR) { pick_out.pos = vec4f(0.0, 0.0, 0.0, 0.0); return; }
   let p = ray[0] + ray[1] * h.t;
   pick_out.pos = vec4f(p, 1.0);
-  pick_out.normal = vec4f(normal_at(p, h), select(0.0, 1.0, h.cap));
+  let n = normal_at(p, h);
+  pick_out.normal = vec4f(n, select(0.0, 1.0, h.cap));
+  pick_out.probe = vec4f(part(p - n * 0.5), part(p - n * 1.0), part(p - n * 2.0), part(p - n * 4.0));
 }
 `;

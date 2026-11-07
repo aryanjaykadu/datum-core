@@ -4,6 +4,7 @@ mod commands;
 mod contract;
 mod docfile;
 mod engine;
+mod exports;
 mod support;
 
 use std::sync::Mutex;
@@ -58,6 +59,10 @@ fn main() {
             support::log_line,
             support::open_log_folder,
             support::app_info,
+            exports::export_dir,
+            exports::stl_to_3mf,
+            exports::save_png,
+            exports::open_export,
         ])
         .on_window_event(|window, event| match event {
             WindowEvent::DragDrop(DragDropEvent::Drop { paths, .. }) => {

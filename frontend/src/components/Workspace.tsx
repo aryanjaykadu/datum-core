@@ -6,8 +6,9 @@ import { deleteFeature, emptyDocument, History, insertFeature, updateFeature, ty
 import type { PickResult, Viewport } from "@/lib/gpu";
 import {
   confirmDialog, files, importCad, isTauri, kernel, listen, pickImportFile, pickOpenPath, pickSavePath, setWindowTitle, support, windowAction,
-  type Catalog, type DatumDocument, type Evaluation, type Feature,
+  type Catalog, type DatumDocument, type Evaluation, type Feature, exporter,
 } from "@/lib/ipc";
+import { TEMPLATES } from "@/lib/templates";
 import { recentFiles, rememberFile, useSettings } from "@/lib/settings";
 import { installSpringVariables } from "@/lib/springs";
 import CommandPalette, { parseIntents } from "./CommandPalette";
@@ -157,6 +158,7 @@ export default function Workspace() {
         if (seq !== evalSeq.current) return;
         const scene = await kernel.scene(settings.bricks);
         if (seq !== evalSeq.current) return;
+        if (vp.current) vp.current.material = Math.max(0, ["al6061t6", "al7075t6", "ti64", "ss316", "s355", "pa12"].indexOf(docRef.current.material ?? ""));
         vp.current?.setScene(scene, r.geometry.bbox_min, r.geometry.bbox_max);
         setResult(r);
         setError(null);
@@ -229,6 +231,13 @@ export default function Workspace() {
     replaceDocument(example ? await kernel.example() : emptyDocument(), null, false);
     if (example) setDirty(true);
   };
+  const newFromTemplate = async (key: string) => {
+    const t = TEMPLATES.find((x) => x.key === key);
+    if (!t || !(await confirmDiscard())) return;
+    await files.reset().catch(() => undefined);
+    replaceDocument(t.doc(), null, false);
+    setDirty(true);
+  };
   const open = async () => {
     const p = await pickOpenPath();
     if (p) await openPath(p);
@@ -260,6 +269,39 @@ export default function Workspace() {
     try {
       const r = await kernel.exportStl(p);
       pushLog("info", "export", `wrote ${r.triangles.toLocaleString()} triangles to ${p}`);
+    } catch (e) {
+      pushLog("error", "export", String(e));
+    }
+  };
+  /** 3MF via the engine's STL; to a chosen path, or to the exports folder and opened in the slicer. */
+  const export3mf = async (toSlicer: boolean) => {
+    if (!result) return;
+    const name = (doc.name ?? "part").replace(/[\/:*?"<>|]/g, "_");
+    try {
+      const dir = await exporter.dir();
+      const out = toSlicer ? `${dir}\${name}.3mf` : await pickSavePath(`${name}.3mf`, "3mf");
+      if (!out) return;
+      const stl = `${dir}\${name}.${Date.now()}.tmp.stl`;
+      await kernel.exportStl(stl);
+      const r = await exporter.stlTo3mf(stl, out, name);
+      pushLog("info", "export", `3MF: ${r.triangles.toLocaleString()} triangles, ${r.vertices.toLocaleString()} vertices → ${out}`);
+      if (toSlicer) {
+        await exporter.open(out);
+        pushLog("info", "export", "opened in the default app for .3mf files (your slicer)");
+      }
+    } catch (e) {
+      pushLog("error", "export", String(e));
+      setError(String(e));
+    }
+  };
+  const screenshot = async () => {
+    const blob = await vp.current?.capture();
+    if (!blob) return;
+    const p = await pickSavePath(`${doc.name ?? "part"}.png`, "png");
+    if (!p) return;
+    try {
+      await exporter.savePng(p, Array.from(new Uint8Array(await blob.arrayBuffer())));
+      pushLog("info", "export", `screenshot saved to ${p}`);
     } catch (e) {
       pushLog("error", "export", String(e));
     }
@@ -349,6 +391,8 @@ export default function Workspace() {
       else if (mod && k === "i") (e.preventDefault(), void pickImportFile().then((p) => { if (p) void importFile(p); }));
       else if (mod && k === "n") (e.preventDefault(), void newDoc(false));
       else if (mod && k === "e") (e.preventDefault(), void exportStl());
+      else if (mod && k === "p" && !e.shiftKey) (e.preventDefault(), void export3mf(true));
+      else if (mod && k === "p" && e.shiftKey) (e.preventDefault(), void screenshot());
       else if (mod && k === ",") (e.preventDefault(), setShowSettings(true));
       else if (mod && k === "k") (e.preventDefault(), setShowPalette(true));
       else if (mod && k === "1") (e.preventDefault(), togglePanel("tree"));
@@ -368,6 +412,7 @@ export default function Workspace() {
     File: [
       { label: "New", shortcut: "Ctrl+N", action: () => void newDoc(false) },
       { label: "New from example (L-bracket)", action: () => void newDoc(true) },
+      ...TEMPLATES.map((t) => ({ label: `New from template: ${t.label}`, action: () => void newFromTemplate(t.key) })),
       { label: "Open…", shortcut: "Ctrl+O", action: () => void open() },
       { label: "Import STEP / STL / OBJ…", shortcut: "Ctrl+I", action: () => void pickImportFile().then((p) => { if (p) void importFile(p); }) },
       ...recent.slice(0, 5).map((p) => ({ label: `  ${basename(p)}`, action: () => void openPath(p) })),
@@ -377,6 +422,9 @@ export default function Workspace() {
       { label: "Save device-locked copy…", action: () => void save(true, true) },
       { separator: true },
       { label: "Export STL…", shortcut: "Ctrl+E", action: () => void exportStl(), disabled: !result },
+      { label: "Export 3MF…", action: () => void export3mf(false), disabled: !result },
+      { label: "Send to slicer (3MF)", shortcut: "Ctrl+P", action: () => void export3mf(true), disabled: !result },
+      { label: "Save screenshot (PNG)…", shortcut: "Ctrl+Shift+P", action: () => void screenshot(), disabled: !result },
       { separator: true },
       { label: "Exit", action: () => void closeApp() },
     ],

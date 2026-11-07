@@ -36,6 +36,8 @@ export default function Inspector({ result, settings }: { result: Evaluation | n
         </div>
       </div>
 
+      <PrintEstimate volume={g.volume_mm3} area={g.area_mm2} height={size[2]} />
+
       <div className="section mono">
         <h3>Checks</h3>
         <Flag label="Mesh" bad={!g.watertight} text={["watertight", "open edges"]} />
@@ -62,5 +64,27 @@ export default function Inspector({ result, settings }: { result: Evaluation | n
         <div className="kv"><span>GPU scene</span><span>{c.kernel_metrics.gpu_vram_usage_mb.toFixed(2)} MB</span></div>
       </div>
     </>
+  );
+}
+
+/**
+ * FDM estimate for a typical 0.4 mm nozzle, 0.2 mm layers, 2 perimeters + 4 top/bottom
+ * layers (~0.9 mm skin) and 20 % infill in PLA. Skin is approximated as area x 0.9 mm.
+ */
+function PrintEstimate({ volume, area, height }: { volume: number; area: number; height: number }) {
+  const skin = Math.min(volume, area * 0.9);
+  const printed = skin + (volume - skin) * 0.2;
+  const layers = Math.ceil(height / 0.2);
+  const seconds = printed / 7 + layers * 1.2;
+  const grams = (printed * 1.24) / 1000;
+  const h = Math.floor(seconds / 3600), m = Math.round((seconds % 3600) / 60);
+  return (
+    <div className="section mono">
+      <h3>3D print estimate · PLA, 0.2 mm, 20 % infill</h3>
+      <div className="kv"><span>Print time</span><span>{h > 0 ? `${h} h ${m} min` : `${m} min`}</span></div>
+      <div className="kv"><span>Filament</span><span>{grams.toFixed(1)} g · {(printed / (Math.PI * 0.8737 * 0.8737) / 1000).toFixed(2)} m</span></div>
+      <div className="kv"><span>Material cost</span><span>≈ ${(grams * 0.022).toFixed(2)} at $22/kg</span></div>
+      <div className="kv sub"><span>layers</span><span>{layers}</span></div>
+    </div>
   );
 }

@@ -5,7 +5,7 @@ import type { Vec3 } from "./ipc";
 export type DisplayMode = "shaded" | "cost" | "normals" | "xray" | "dfm";
 export type ViewName = "iso" | "front" | "back" | "top" | "bottom" | "left" | "right";
 export interface Section { axis: "off" | "x" | "y" | "z"; offset: number; flip: boolean }
-export interface PickResult { position: Vec3; normal: Vec3; cap: boolean }
+export interface PickResult { position: Vec3; normal: Vec3; cap: boolean; probe?: number[] }
 
 const MODE_INDEX: Record<DisplayMode, number> = { shaded: 0, cost: 1, normals: 2, xray: 3, dfm: 4 };
 // z-up camera presets: [yaw, pitch]
@@ -52,6 +52,8 @@ export class Viewport {
   private spin: [number, number] = [0, 0];
   cam = { yaw: VIEWS.iso[0], pitch: VIEWS.iso[1], dist: 200, target: [0, 0, 0] as Vec3, fov: 32, ortho: false };
   mode: DisplayMode = "shaded";
+  /** Index into the shader's material looks (same order as the kernel's material table). */
+  material = 0;
   grid = true;
   section: Section = { axis: "off", offset: 0, flip: false };
   onFrame?: (ms: number, width: number, height: number) => void;
@@ -68,8 +70,8 @@ export class Viewport {
     v.format = navigator.gpu.getPreferredCanvasFormat();
     v.context.configure({ device: v.device, format: v.format, alphaMode: "opaque" });
     v.uniform = v.device.createBuffer({ size: 160, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-    v.pickBuffer = v.device.createBuffer({ size: 32, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
-    v.pickRead = v.device.createBuffer({ size: 32, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
+    v.pickBuffer = v.device.createBuffer({ size: 48, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
+    v.pickRead = v.device.createBuffer({ size: 48, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
     return v;
   }
 
@@ -341,7 +343,7 @@ export class Viewport {
       ...eye, this.halfHeight(),
       ...forward, this.cam.ortho ? 1 : 0,
       ...right, this.canvas.width / this.canvas.height,
-      ...up, 0,
+      ...up, this.material,
       ...s.lo, s.n,
       ...s.hi, (s.hi[0] - s.lo[0]) / s.n,
       this.canvas.width, this.canvas.height, MODE_INDEX[this.mode], this.partLo[2],
@@ -393,6 +395,14 @@ export class Viewport {
     this.onFrame?.(performance.now() - t0, this.canvas.width, this.canvas.height);
   }
 
+  /** Full-quality frame as a PNG (the drawing buffer is read in the same task as the submit). */
+  capture(): Promise<Blob | null> {
+    this.interacting = false;
+    clearTimeout(this.idle);
+    void this.render();
+    return new Promise((resolve) => this.canvas.toBlob(resolve, "image/png"));
+  }
+
   /** Trace one ray at a CSS pixel position: surface point and normal, or null. */
   async pick(cssX: number, cssY: number): Promise<PickResult | null> {
     if (!this.scene || !this.pickPipeline || !this.pickBind) return null;
@@ -405,13 +415,13 @@ export class Viewport {
       pass.setBindGroup(0, this.pickBind!);
       pass.dispatchWorkgroups(1);
       pass.end();
-      enc.copyBufferToBuffer(this.pickBuffer, 0, this.pickRead, 0, 32);
+      enc.copyBufferToBuffer(this.pickBuffer, 0, this.pickRead, 0, 48);
       this.device.queue.submit([enc.finish()]);
       await this.pickRead.mapAsync(GPUMapMode.READ);
       const f = new Float32Array(this.pickRead.getMappedRange().slice(0));
       this.pickRead.unmap();
       if (f[3] < 0.5) return null;
-      return { position: [f[0], f[1], f[2]] as Vec3, normal: [f[4], f[5], f[6]] as Vec3, cap: f[7] > 0.5 };
+      return { position: [f[0], f[1], f[2]] as Vec3, normal: [f[4], f[5], f[6]] as Vec3, cap: f[7] > 0.5, probe: [f[8], f[9], f[10], f[11]] };
     };
     // serialise picks: the readback buffer can only be mapped once at a time
     const result = this.picking.then(run, run);

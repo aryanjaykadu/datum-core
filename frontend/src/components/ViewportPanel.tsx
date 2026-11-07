@@ -45,6 +45,7 @@ export default function ViewportPanel({ insets, onReady, markers, settings, onSe
     Viewport.create(canvasRef.current!).then((v) => {
       if (disposed) return v.destroy();
       vpRef.current = v;
+      (window as unknown as { __datumViewport?: Viewport }).__datumViewport = v;
       v.setInsets(insets);
       v.onFrame = (t) => {
         setMs(t);
