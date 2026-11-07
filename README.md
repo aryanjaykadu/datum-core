@@ -11,11 +11,13 @@ A Windows desktop CAD app built on a GPU implicit-modeling kernel. Geometry is a
 
 ## Build
 
+The repo has two parts: `kernel/` (C++ geometry engine) and `frontend/` (Tauri desktop app). Run the commands below from `frontend/`; paths to the kernel use `../kernel/`.
+
 Prerequisites: Node 20+, Rust (MSVC) with Visual Studio Build Tools (C++ workload), and the kernel toolchain (`python -m pip install ziglang cmake ninja`).
 
 ```bash
 kernel/build.cmd                                              # builds dk_engine.exe and the tests
-cp kernel/build/dk_engine.exe src-tauri/bin/dk_engine-x86_64-pc-windows-msvc.exe
+cp ../kernel/build/dk_engine.exe src-tauri/bin/dk_engine-x86_64-pc-windows-msvc.exe
 # STEP converter sidecar (clean venv keeps it ~38 MB)
 python -m venv .pyinstaller/convenv
 .pyinstaller/convenv/Scripts/pip install cascadio numpy pyinstaller
@@ -31,7 +33,7 @@ Output: `src-tauri/target/release/bundle/msi/Datum Core_1.0.0_x64_en-US.msi`.
 
 ```bash
 kernel/build/dk_tests.exe                                     # kernel: geometry, meshing, robotics
-python kernel/tests/engine_smoke.py kernel/build/dk_engine.exe   # engine protocol
+python ../kernel/tests/engine_smoke.py ../kernel/build/dk_engine.exe   # engine protocol
 npm run test:urdf                                                # URDF import against the real kernel
 cd src-tauri && cargo test --release                             # .datum encryption
 ```
