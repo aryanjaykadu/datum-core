@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Datum Kernel Viewport</title>
+<style>
+  :root { color-scheme: dark; --glass: rgba(22, 24, 30, .62); --hair: #222; --dim: #8b8d96; --teal: #4fd1c5; }
+  html, body { margin: 0; height: 100%; background: #0b0c10; color: #ececee; font: 12px/1.45 Inter, system-ui, sans-serif; overflow: hidden; }
+  canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; cursor: grab; }
+  canvas:active { cursor: grabbing; }
+  .hud { position: fixed; left: 12px; top: 12px; width: 260px; padding: 12px 14px; border-radius: 14px; background: var(--glass);
+         backdrop-filter: blur(32px) saturate(140%); border: 1px solid var(--hair); box-shadow: inset 0 1px 0 rgba(255,255,255,.07); }
+  .hud h1 { margin: 0 0 8px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--dim); }
+  .kv { display: flex; justify-content: space-between; font-family: "JetBrains Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+  .kv span:first-child { color: var(--dim); }
+  .tabs { display: flex; gap: 2px; margin-top: 10px; padding: 3px; border-radius: 9px; background: rgba(0,0,0,.25); border: 1px solid var(--hair); }
+  .tabs button { flex: 1; padding: 3px 0; border: 0; border-radius: 6px; background: none; color: var(--dim); font: inherit; cursor: pointer; }
+  .tabs button[aria-pressed="true"] { background: rgba(255,255,255,.08); color: #ececee; }
+  .note { margin-top: 8px; color: #5b5d66; }
+  .err { position: fixed; inset: 0; display: grid; place-items: center; color: #ff6b6b; text-align: center; padding: 24px; }
+</style>
+</head>
+<body>
+<canvas id="view"></canvas>
+<div class="hud">
+  <h1>Datum kernel · WebGPU</h1>
+  <div class="kv"><span>scene</span><span id="s-name">—</span></div>
+  <div class="kv"><span>surface bricks</span><span id="s-bricks">—</span></div>
+  <div class="kv"><span>avg / max program</span><span id="s-prog">—</span></div>
+  <div class="kv"><span>resolution</span><span id="s-res">—</span></div>
+  <div class="kv"><span>GPU frame</span><span id="s-ms">—</span></div>
+  <div class="tabs" role="group">
+    <button data-mode="0" aria-pressed="true">Shaded</button>
+    <button data-mode="1" aria-pressed="false">Cost</button>
+    <button data-mode="2" aria-pressed="false">Normals</button>
+  </div>
+  <div class="note">Drag to orbit · right-drag to pan · wheel to zoom</div>
+</div>
+<script type="module" src="main.js"></script>
+</body>
+</html>
