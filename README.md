@@ -35,8 +35,17 @@ Output: `src-tauri/target/release/bundle/msi/Datum Core_1.0.0_x64_en-US.msi`.
 kernel/build/dk_tests.exe                                     # kernel: geometry, meshing, robotics
 python ../kernel/tests/engine_smoke.py ../kernel/build/dk_engine.exe   # engine protocol
 npm run test:urdf                                                # URDF import against the real kernel
+npm run test:params                                              # parameter expressions
 cd src-tauri && cargo test --release                             # .datum encryption
 ```
+
+## Modelling and output (v1.1)
+
+- **Parts**: involute spur gears, ISO metric threaded rods (M3–M20), hole wizard (simple / counterbore / countersink), surface textures (knurl, bumps, ribs), loft between two sketches.
+- **Parameters**: named values in the Part panel; type `=width / 2` in any number field to link it.
+- **Manufacturability view**: wall thickness (green > 1.5 mm, amber, red < 0.5 mm) and > 45° overhangs; the status bar shows the wall under the cursor.
+- **Output**: STL, 3MF, *Send to slicer* (Ctrl+P opens the 3MF in your default slicer), PNG screenshots, 3D-print time/filament estimate.
+- **Workflow**: view cube, animated camera, zoom to cursor, double-click a face to look at it, History timeline, starter templates (File → New from template).
 
 ## Sketch and import
 
