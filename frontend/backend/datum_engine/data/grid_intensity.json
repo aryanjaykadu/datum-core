@@ -1,0 +1,20 @@
+{
+  "as_of": "reference annual averages (approx.), edit before use",
+  "unit": "g CO2e per kWh",
+  "zones": {
+    "WORLD": 480,
+    "IN": 710,
+    "CN": 560,
+    "US": 370,
+    "DE": 380,
+    "GB": 210,
+    "FR": 55,
+    "SE": 40,
+    "NO": 30,
+    "JP": 480,
+    "KR": 430,
+    "MX": 420,
+    "PL": 660,
+    "TW": 560
+  }
+}

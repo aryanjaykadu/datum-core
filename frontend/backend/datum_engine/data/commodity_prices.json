@@ -1,0 +1,14 @@
+{
+  "as_of": "reference values, edit before use",
+  "note": "Static reference prices for offline costing. Not market data. Replace with your procurement contract prices, or run with a Bloomberg Terminal for live quotes.",
+  "commodities": {
+    "aluminium": { "usd_per_kg": 2.60, "annual_drift": 0.025 },
+    "steel_hrc": { "usd_per_kg": 0.85, "annual_drift": 0.02 },
+    "stainless_316": { "usd_per_kg": 4.20, "annual_drift": 0.02 },
+    "titanium": { "usd_per_kg": 28.0, "annual_drift": 0.03 },
+    "copper": { "usd_per_kg": 9.50, "annual_drift": 0.03 },
+    "nickel": { "usd_per_kg": 16.5, "annual_drift": 0.02 },
+    "abs": { "usd_per_kg": 2.10, "annual_drift": 0.02 },
+    "pa12": { "usd_per_kg": 9.00, "annual_drift": 0.02 }
+  }
+}

@@ -1,0 +1,79 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Datum Core",
+  "version": "1.0.0",
+  "identifier": "com.datumcore.enterprise",
+  "build": {
+    "frontendDist": "../out",
+    "devUrl": "http://localhost:3000",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build:static"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Datum Core",
+        "width": 1600,
+        "height": 960,
+        "minWidth": 1180,
+        "minHeight": 740,
+        "decorations": false,
+        "shadow": true,
+        "theme": "Dark",
+        "backgroundColor": "#0B0C10",
+        "center": true,
+        "dragDropEnabled": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src ipc: http://ipc.localhost; worker-src 'self' blob:"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "msi"
+    ],
+    "externalBin": [
+      "bin/dk_engine",
+      "bin/step_convert"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.png",
+      "icons/icon.ico"
+    ],
+    "publisher": "Datum Core",
+    "category": "Productivity",
+    "shortDescription": "GPU-accelerated implicit CAD",
+    "windows": {
+      "wix": {
+        "language": "en-US",
+        "upgradeCode": "6f0c7f4e-3a7b-4f5e-9a51-1d0f3c2b7a10"
+      }
+    },
+    "fileAssociations": [
+      {
+        "ext": [
+          "datum"
+        ],
+        "name": "Datum Design",
+        "description": "Datum Core parametric design",
+        "role": "Editor",
+        "mimeType": "application/x-datum"
+      },
+      {
+        "ext": [
+          "step",
+          "stp"
+        ],
+        "name": "STEP model",
+        "description": "ISO 10303 STEP model (import)",
+        "role": "Viewer"
+      }
+    ]
+  }
+}
