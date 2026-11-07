@@ -36,7 +36,8 @@
       "msi"
     ],
     "externalBin": [
-      "bin/dk_engine"
+      "bin/dk_engine",
+      "bin/step_convert"
     ],
     "icon": [
       "icons/32x32.png",
@@ -63,6 +64,15 @@
         "description": "Datum Core parametric design",
         "role": "Editor",
         "mimeType": "application/x-datum"
+      },
+      {
+        "ext": [
+          "step",
+          "stp"
+        ],
+        "name": "STEP model",
+        "description": "ISO 10303 STEP model (import)",
+        "role": "Viewer"
       }
     ]
   }

@@ -79,6 +79,44 @@ pub fn save_document(app: AppHandle, path: String, document: Value, protect: boo
     Ok(())
 }
 
+/// Prepare a CAD file for import. STEP is converted to a triangle mesh by the bundled
+/// OpenCASCADE converter into the import cache (keyed by path and modification time, so a
+/// re-import of an unchanged file is instant); STL and OBJ are used as they are.
+#[tauri::command]
+pub async fn import_cad(path: String) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || import_cad_blocking(&path)).await.map_err(|e| e.to_string())?
+}
+
+fn import_cad_blocking(path: &str) -> Result<Value, String> {
+    let lower = path.to_ascii_lowercase();
+    if lower.ends_with(".stl") || lower.ends_with(".obj") {
+        return Ok(json!({"mesh": path, "source": path}));
+    }
+    if !(lower.ends_with(".step") || lower.ends_with(".stp")) {
+        return Err("supported imports: STEP (.step, .stp), STL and OBJ".into());
+    }
+    let meta = std::fs::metadata(path).map_err(|e| format!("could not read {path}: {e}"))?;
+    let stamp = meta.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs()).unwrap_or(0);
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    std::hash::Hash::hash(&(path, stamp), &mut hasher);
+    let base = std::env::var_os("LOCALAPPDATA").map(std::path::PathBuf::from).unwrap_or_else(std::env::temp_dir);
+    let dir = base.join("DatumCore").join("imports");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let out = dir.join(format!("{:016x}.obj", std::hash::Hasher::finish(&hasher)));
+    if !out.exists() {
+        let exe = std::env::current_exe().map_err(|e| e.to_string())?.parent().map(|d| d.join("step_convert.exe")).ok_or("no exe dir")?;
+        let mut cmd = std::process::Command::new(&exe);
+        cmd.arg(path).arg(&out);
+        #[cfg(windows)]
+        std::os::windows::process::CommandExt::creation_flags(&mut cmd, 0x0800_0000);
+        let result = cmd.output().map_err(|e| format!("STEP converter could not start ({}): {e}", exe.display()))?;
+        if !result.status.success() || !out.exists() {
+            return Err(format!("STEP conversion failed: {}", String::from_utf8_lossy(&result.stderr).trim()));
+        }
+    }
+    Ok(json!({"mesh": out, "source": path}))
+}
+
 /// Read a robot description chosen in the open dialog (URDF / XML only, at most 10 MB).
 #[tauri::command]
 pub fn read_robot_file(path: String) -> Result<String, String> {

@@ -37,6 +37,15 @@ function NumberField({ value, onCommit, unit, settings, min }: { value: number; 
 }
 
 function ParamRow({ name, spec, value, onChange, settings, featureType }: { name: string; spec: ParamSpec; value: unknown; onChange: (v: unknown) => void; settings: Settings; featureType?: string }) {
+  if (spec.kind === "file") {
+    const path = String(value ?? "");
+    return (
+      <label className="prop">
+        <span>{spec.label}</span>
+        <span className="file-path" title={path}>{path.split(/[\\/]/).pop() || "—"}</span>
+      </label>
+    );
+  }
   if (spec.kind === "profile")
     return (
       <div className="prop-profile">

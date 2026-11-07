@@ -29,6 +29,7 @@ export class Viewport {
   private pickRead!: GPUBuffer;
   private bricks: GPUBuffer | null = null;
   private code: GPUBuffer | null = null;
+  private grids: GPUBuffer | null = null;
   private pipeline: GPURenderPipeline | null = null;
   private pickPipeline: GPUComputePipeline | null = null;
   private bind: GPUBindGroup | null = null;
@@ -91,19 +92,28 @@ export class Viewport {
     };
     this.bricks?.destroy();
     this.code?.destroy();
+    this.grids?.destroy();
     this.bricks = make(40, brickBytes);
     this.code = make(40 + brickBytes, codeBytes);
+    const gridStart = 40 + brickBytes + codeBytes;
+    this.grids = make(gridStart, buffer.byteLength - gridStart);
     if (registers !== this.registers || !this.pipeline) this.buildPipelines(Math.max(registers, 1));
     this.bind = this.device.createBindGroup({
       layout: this.pipeline!.getBindGroupLayout(0),
-      entries: [0, 1, 2].map((binding) => ({ binding, resource: { buffer: [this.uniform, this.bricks!, this.code!][binding] } })),
+      entries: [
+        ...[0, 1, 2].map((binding) => ({ binding, resource: { buffer: [this.uniform, this.bricks!, this.code!][binding] } })),
+        { binding: 4, resource: { buffer: this.grids! } },
+      ],
     });
     this.pickBind = this.device.createBindGroup({
       layout: this.pickPipeline!.getBindGroupLayout(0),
-      entries: [0, 1, 2, 3].map((binding) => ({ binding, resource: { buffer: [this.uniform, this.bricks!, this.code!, this.pickBuffer][binding] } })),
+      entries: [
+        ...[0, 1, 2, 3].map((binding) => ({ binding, resource: { buffer: [this.uniform, this.bricks!, this.code!, this.pickBuffer][binding] } })),
+        { binding: 4, resource: { buffer: this.grids! } },
+      ],
     });
     const first = !this.scene;
-    this.scene = { n, registers, lo: [box[0], box[1], box[2]], hi: [box[3], box[4], box[5]], bytes: brickBytes + codeBytes };
+    this.scene = { n, registers, lo: [box[0], box[1], box[2]], hi: [box[3], box[4], box[5]], bytes: buffer.byteLength - 40 };
     this.partLo = partLo;
     this.partHi = partHi;
     if (first) this.fit();

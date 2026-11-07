@@ -9,7 +9,7 @@ mod support;
 use std::sync::Mutex;
 use tauri::{DragDropEvent, Emitter, Manager, RunEvent, WindowEvent};
 
-const OPENABLE: &[&str] = &["datum"];
+const OPENABLE: &[&str] = &["datum", "step", "stp"];
 
 fn openable_arg(args: &[String]) -> Option<String> {
     args.iter()
@@ -50,6 +50,7 @@ fn main() {
             commands::save_document,
             commands::new_document,
             commands::read_robot_file,
+            commands::import_cad,
             commands::take_launch_file,
             support::autosave_write,
             support::autosave_read,

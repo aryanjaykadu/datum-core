@@ -5,7 +5,7 @@ import { click, reject, setSoundEnabled, validate } from "@/lib/audio";
 import { deleteFeature, emptyDocument, History, insertFeature, updateFeature, type Operation } from "@/lib/document";
 import type { PickResult, Viewport } from "@/lib/gpu";
 import {
-  confirmDialog, files, isTauri, kernel, listen, pickOpenPath, pickSavePath, setWindowTitle, support, windowAction,
+  confirmDialog, files, importCad, isTauri, kernel, listen, pickImportFile, pickOpenPath, pickSavePath, setWindowTitle, support, windowAction,
   type Catalog, type DatumDocument, type Evaluation, type Feature,
 } from "@/lib/ipc";
 import { recentFiles, rememberFile, useSettings } from "@/lib/settings";
@@ -64,6 +64,10 @@ export default function Workspace() {
   // ------------------------------------------------------------ document edits
   const docRef = useRef(doc);
   docRef.current = doc;
+  const catalogRef = useRef(catalog);
+  catalogRef.current = catalog;
+  const opRef = useRef(op);
+  opRef.current = op;
   const commit = useCallback((next: DatumDocument) => {
     history.current.push(docRef.current);
     setDoc(next);
@@ -178,7 +182,35 @@ export default function Workspace() {
   const dirtyRef = useRef(dirty);
   dirtyRef.current = dirty;
 
+  /** STEP / STL / OBJ become an imported feature: added to the current part, or a new one. */
+  async function importFile(p: string) {
+    // called from listeners registered at startup: read the catalog through a ref, and wait
+    // for it when a file was double-clicked before the kernel finished starting
+    const cat = catalogRef.current ?? (await kernel.catalog().then((c) => (setCatalog(c), c)).catch(() => null));
+    if (!cat) return pushLog("error", "import", "the kernel is not available");
+    setBusy(true);
+    pushLog("info", "import", `importing ${p}`);
+    try {
+      const r = await importCad(p);
+      const name = basename(r.source) ?? "Imported part";
+      const base = docRef.current;
+      const res = insertFeature(base, cat, "import_mesh", base.features.length ? opRef.current : "new", { path: r.mesh, source: r.source, resolution: 160 });
+      const f = res.doc.features.find((x) => x.id === res.selected);
+      if (f) f.name = name;
+      if (!base.features.length) res.doc.name = name.replace(/\.[^.]+$/, "");
+      commit(res.doc);
+      setSelected(res.selected);
+      pushLog("info", "import", `${name}: converted, baking the field (160 cells)…`);
+    } catch (e) {
+      pushLog("error", "import", String(e));
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function openPath(p: string) {
+    if (/\.(step|stp|stl|obj)$/i.test(p)) return importFile(p);
     if (!(await confirmDiscard())) return;
     try {
       const r = await files.open(p);
@@ -314,6 +346,7 @@ export default function Workspace() {
       const k = e.key.toLowerCase();
       if (mod && k === "s") (e.preventDefault(), void save(e.shiftKey));
       else if (mod && k === "o") (e.preventDefault(), void open());
+      else if (mod && k === "i") (e.preventDefault(), void pickImportFile().then((p) => { if (p) void importFile(p); }));
       else if (mod && k === "n") (e.preventDefault(), void newDoc(false));
       else if (mod && k === "e") (e.preventDefault(), void exportStl());
       else if (mod && k === ",") (e.preventDefault(), setShowSettings(true));
@@ -336,6 +369,7 @@ export default function Workspace() {
       { label: "New", shortcut: "Ctrl+N", action: () => void newDoc(false) },
       { label: "New from example (L-bracket)", action: () => void newDoc(true) },
       { label: "Open…", shortcut: "Ctrl+O", action: () => void open() },
+      { label: "Import STEP / STL / OBJ…", shortcut: "Ctrl+I", action: () => void pickImportFile().then((p) => { if (p) void importFile(p); }) },
       ...recent.slice(0, 5).map((p) => ({ label: `  ${basename(p)}`, action: () => void openPath(p) })),
       { separator: true },
       { label: "Save", shortcut: "Ctrl+S", action: () => void save(false) },
@@ -373,7 +407,7 @@ export default function Workspace() {
       { label: "Run log", checked: dock === "log", action: () => setDock("log") },
     ],
     Insert: catalog
-      ? Object.entries(catalog.features).map(([type, s]) => ({ label: `${s.group}: ${s.label}`, action: () => insert(type), disabled: s.inputs !== 0 && doc.features.length === 0 }))
+      ? Object.entries(catalog.features).filter(([, s]) => !s.hidden).map(([type, s]) => ({ label: `${s.group}: ${s.label}`, action: () => insert(type), disabled: s.inputs !== 0 && doc.features.length === 0 }))
       : [],
     Tools: [
       { label: "Rebuild (fine quality)", action: () => updateSettings({ quality: "fine" }), checked: settings.quality === "fine" },

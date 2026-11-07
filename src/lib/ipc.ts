@@ -54,7 +54,7 @@ export interface Evaluation {
 }
 
 export interface ParamSpec {
-  kind: "number" | "vec3" | "choice" | "profile";
+  kind: "number" | "vec3" | "choice" | "profile" | "file";
   label: string;
   default: unknown;
   min?: number;
@@ -62,6 +62,7 @@ export interface ParamSpec {
   options?: string[];
 }
 export interface FeatureSpec {
+  hidden?: boolean;
   label: string;
   group: string;
   inputs: number | string;
@@ -155,6 +156,14 @@ export async function pickRobotFile(): Promise<string | null> {
   const r = await open({ multiple: false, filters: [{ name: "Robot description (URDF)", extensions: ["urdf", "xml"] }] });
   return typeof r === "string" ? r : null;
 }
+export async function pickImportFile(): Promise<string | null> {
+  if (!isTauri()) return null;
+  const { open } = await import("@tauri-apps/plugin-dialog");
+  const r = await open({ multiple: false, filters: [{ name: "CAD (STEP, STL, OBJ)", extensions: ["step", "stp", "stl", "obj"] }] });
+  return typeof r === "string" ? r : null;
+}
+export const importCad = (path: string) => invoke<{ mesh: string; source: string }>("import_cad", { path });
+
 export const readRobotFile = (path: string) => invoke<string>("read_robot_file", { path });
 
 export async function confirmDialog(message: string, title = "Datum Core"): Promise<boolean> {

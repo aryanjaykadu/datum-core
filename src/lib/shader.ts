@@ -19,6 +19,39 @@ struct PickOut { pos: vec4f, normal: vec4f };
 @group(0) @binding(0) var<uniform> U: Uniforms;
 @group(0) @binding(1) var<storage, read> bricks: array<u32>;
 @group(0) @binding(2) var<storage, read> code: array<Instr>;
+@group(0) @binding(4) var<storage, read> grids: array<f32>;  // count | headers | data
+
+// trilinear signed-distance grid (imported parts); matches meshfield.cpp
+fn grid_sample(gid: u32, p: vec3f) -> f32 {
+  let b = 1u + gid * 8u;
+  let lo = vec3f(grids[b], grids[b + 1u], grids[b + 2u]);
+  let h = grids[b + 3u];
+  let n = vec3u(bitcast<u32>(grids[b + 4u]), bitcast<u32>(grids[b + 5u]), bitcast<u32>(grids[b + 6u]));
+  let off = bitcast<u32>(grids[b + 7u]);
+  let hi = lo + vec3f(n - vec3u(1u)) * h;
+  let q = clamp(p, lo, hi);
+  let f = (q - lo) / h;
+  let i = min(vec3u(f), n - vec3u(2u));
+  let t = f - vec3f(i);
+  let sx = n.x;
+  let sxy = n.x * n.y;
+  let i000 = off + i.z * sxy + i.y * sx + i.x;
+  let c000 = grids[i000];
+  let c100 = grids[i000 + 1u];
+  let c010 = grids[i000 + sx];
+  let c110 = grids[i000 + sx + 1u];
+  let c001 = grids[i000 + sxy];
+  let c101 = grids[i000 + sxy + 1u];
+  let c011 = grids[i000 + sxy + sx];
+  let c111 = grids[i000 + sxy + sx + 1u];
+  let x00 = mix(c000, c100, t.x);
+  let x10 = mix(c010, c110, t.x);
+  let x01 = mix(c001, c101, t.x);
+  let x11 = mix(c011, c111, t.x);
+  let v = mix(mix(x00, x10, t.y), mix(x01, x11, t.y), t.z);
+  let out = length(p - q);
+  return select(v, max(out, v - out), out > 0.0);  // lower bound outside the grid (see meshfield.cpp)
+}
 
 const MAX_SLOTS: u32 = __MAX_SLOTS__;
 const FAR: f32 = 1e7;
@@ -55,9 +88,10 @@ fn eval_program(p: vec3f, off: u32, len: u32) -> f32 {
       case 14u: { v = sin(s[ins.a]); }
       case 15u: { v = cos(s[ins.a]); }
       case 16u: { v = select(abs(s[ins.a]), -abs(s[ins.a]), s[ins.b] < 0.0); }
+      case 17u: { v = grid_sample(ins.op >> 24u, vec3f(s[ins.a], s[ins.b], s[u32(ins.c)])); }
       default: { v = 0.0; }
     }
-    out = ins.op >> 8u;
+    out = (ins.op >> 8u) & 0xFFFFu;
     s[out] = v;
   }
   return s[out];
