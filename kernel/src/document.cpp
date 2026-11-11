@@ -184,6 +184,39 @@ struct Builder {
                 fail(id, e.what());
             }
         }
+        if (type == "wing" || type == "nose_cone" || type == "spring" || type == "bearing" || type == "beam" || type == "brake_disc" || type == "wheel") {
+            P3 q = local(p, params);
+            auto str = [&](const char* key, const char* fallback) { return params.value(key, std::string(fallback)); };
+            try {
+                if (type == "wing")
+                    return wing(q, str("naca", "2412"), positive(params, "root_chord", 180, id), num(params, "taper", 0.6),
+                                positive(params, "span", 500, id), num(params, "sweep", 15), num(params, "dihedral", 3));
+                if (type == "nose_cone") return nose_cone(q, str("shape", "ogive"), positive(params, "diameter", 60, id), positive(params, "length", 150, id));
+                if (type == "spring")
+                    return coil_spring(q, positive(params, "mean_d", 20, id), positive(params, "wire_d", 2, id),
+                                       positive(params, "length", 40, id), positive(params, "turns", 7, id));
+                if (type == "bearing") {
+                    std::string size = str("size", "608");
+                    BearingSize s = size == "custom" ? BearingSize{positive(params, "bore", 8, id), positive(params, "od", 22, id), positive(params, "width", 7, id)}
+                                                     : bearing_size(size);
+                    return ball_bearing(q, s);
+                }
+                if (type == "beam") {
+                    std::string kind = str("kind", "I-beam"), size = str("size", "custom");
+                    BeamSize s = size == "custom" ? BeamSize{positive(params, "height", 100, id), positive(params, "width", 55, id),
+                                                             positive(params, "web", 4, id), positive(params, "flange", 6, id)}
+                                                  : ipe_size(size);
+                    return beam(q, size == "custom" ? kind : "I-beam", s, positive(params, "length", 300, id));
+                }
+                if (type == "brake_disc")
+                    return brake_disc(q, positive(params, "diameter", 280, id), positive(params, "thickness", 22, id), positive(params, "bore", 65, id),
+                                      int(num(params, "bolts", 5)), positive(params, "pcd", 112, id), int(num(params, "drilled", 24)));
+                return wheel(q, positive(params, "diameter", 381, id), positive(params, "width", 165, id), int(num(params, "spokes", 5)),
+                             int(num(params, "bolts", 5)), positive(params, "pcd", 112, id), positive(params, "bore", 57.1, id));
+            } catch (const std::runtime_error& e) {
+                fail(id, e.what());
+            }
+        }
         if (type == "thread") {
             static const std::map<std::string, double> coarse = {{"M3", 0.5}, {"M4", 0.7}, {"M5", 0.8}, {"M6", 1.0}, {"M8", 1.25},
                                                                  {"M10", 1.5}, {"M12", 1.75}, {"M16", 2.0}, {"M20", 2.5}};
@@ -402,6 +435,35 @@ json feature_catalog() {
         {"thread", {{"label", "Threaded rod"}, {"group", "Parts"}, {"inputs", 0},
                     {"params", with_placement({{"size", choice("Size", {"M8", "M3", "M4", "M5", "M6", "M10", "M12", "M16", "M20"})},
                                                {"length", number("Length", 30, 0.5)}, {"pitch", number("Pitch (0 = coarse)", 0, 0)}})}}},
+        {"spring", {{"label", "Coil spring"}, {"group", "Parts"}, {"inputs", 0},
+                    {"params", with_placement({{"mean_d", number("Coil diameter (mean)", 20, 0.5)}, {"wire_d", number("Wire diameter", 2, 0.1)},
+                                               {"length", number("Free length", 40, 0.5)}, {"turns", number("Turns", 7, 1, "")}})}}},
+        {"bearing", {{"label", "Ball bearing"}, {"group", "Parts"}, {"inputs", 0},
+                     {"params", with_placement({{"size", choice("Size", {"608", "6000", "6200", "6201", "6202", "6203", "6204", "6205", "custom"})},
+                                                {"bore", number("Bore (custom)", 8, 1)}, {"od", number("Outer diameter (custom)", 22, 2)},
+                                                {"width", number("Width (custom)", 7, 1)}})}}},
+        {"beam", {{"label", "Structural beam"}, {"group", "Structural"}, {"inputs", 0},
+                  {"params", with_placement({{"size", choice("Standard size", {"custom", "IPE 80", "IPE 100", "IPE 120", "IPE 160", "IPE 200"})},
+                                             {"kind", choice("Section (custom)", {"I-beam", "C-channel", "L-angle", "T-bar", "Rect tube"})},
+                                             {"height", number("Height (custom)", 100, 1)}, {"width", number("Width (custom)", 55, 1)},
+                                             {"web", number("Web / wall (custom)", 4, 0.2)}, {"flange", number("Flange (custom)", 6, 0.2)},
+                                             {"length", number("Length", 300, 1)}})}}},
+        {"wing", {{"label", "Wing (NACA)"}, {"group", "Aerospace"}, {"inputs", 0},
+                  {"params", with_placement({{"naca", choice("NACA section", {"2412", "0012", "0009", "4412", "4415", "6409"})},
+                                             {"root_chord", number("Root chord", 180, 5)}, {"taper", number("Taper ratio", 0.6, 0.1, "")},
+                                             {"span", number("Half span", 500, 5)}, {"sweep", number("Sweep", 15, -60, "deg")},
+                                             {"dihedral", number("Dihedral", 3, -30, "deg")}})}}},
+        {"nose_cone", {{"label", "Nose cone"}, {"group", "Aerospace"}, {"inputs", 0},
+                       {"params", with_placement({{"shape", choice("Shape", {"ogive", "conical", "elliptical", "parabolic"})},
+                                                  {"diameter", number("Base diameter", 60, 1)}, {"length", number("Length", 150, 1)}})}}},
+        {"brake_disc", {{"label", "Brake disc"}, {"group", "Automotive"}, {"inputs", 0},
+                        {"params", with_placement({{"diameter", number("Outer diameter", 280, 50)}, {"thickness", number("Thickness", 22, 2)},
+                                                   {"bore", number("Centre bore", 65, 5)}, {"bolts", number("Wheel bolts", 5, 3, "")},
+                                                   {"pcd", number("Bolt circle (PCD)", 112, 30)}, {"drilled", number("Drilled holes per ring", 24, 0, "")}})}}},
+        {"wheel", {{"label", "Wheel"}, {"group", "Automotive"}, {"inputs", 0},
+                   {"params", with_placement({{"diameter", number("Rim diameter", 381, 100)}, {"width", number("Rim width", 165, 30)},
+                                              {"spokes", number("Spokes", 5, 3, "")}, {"bolts", number("Wheel bolts", 5, 3, "")},
+                                              {"pcd", number("Bolt circle (PCD)", 112, 50)}, {"bore", number("Centre bore", 57.1, 10)}})}}},
         {"extrude", {{"label", "Extrude sketch"}, {"group", "Sketch"}, {"inputs", 0},
                      {"params", with_placement({{"profile", json{{"kind", "profile"}, {"label", "Profile"},
                                                                  {"default", json::array({{0, 0, 0}, {40, 0, 0}, {40, 25, 0}, {0, 25, 0}})}}},

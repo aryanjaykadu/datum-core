@@ -11,10 +11,16 @@ export interface Settings {
   annotations: boolean;
   orthographic: boolean;
   decimals: number;
+  /** Viewport speed/quality trade-off; "auto" adapts to the GPU. */
+  performance: "auto" | "quality" | "balanced" | "performance";
+  /** Simple shows a short, explained tool set; Pro shows everything. */
+  mode: "simple" | "pro";
+  workspace: "all" | "mechanical" | "robotics" | "automotive" | "aerospace";
 }
 
 export const DEFAULT_SETTINGS: Settings = {
   units: "mm", quality: "draft", bricks: 24, sound: true, grid: true, annotations: true, orthographic: false, decimals: 2,
+  performance: "auto", mode: "pro", workspace: "all",
 };
 
 const KEY = "datum.settings.v1";

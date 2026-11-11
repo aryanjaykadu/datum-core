@@ -23,6 +23,8 @@ import RoboticsPanel from "./RoboticsPanel";
 import Ribbon from "./Ribbon";
 import RunLog, { type LogLine } from "./RunLog";
 import HistoryPanel from "./HistoryPanel";
+import CalculatorsDialog from "./CalculatorsDialog";
+import TemplateGallery from "./TemplateGallery";
 import SettingsDialog from "./SettingsDialog";
 import StatusBar from "./StatusBar";
 import ViewportPanel, { type Marker } from "./ViewportPanel";
@@ -43,6 +45,8 @@ export default function Workspace() {
   const [log, setLog] = useState<LogLine[]>([]);
   const [op, setOp] = useState<Operation>("add");
   const [dock, setDock] = useState<"log" | "graph" | "history">("graph");
+  const [showCalc, setShowCalc] = useState(false);
+  const [showGallery, setShowGallery] = useState(false);
   const [rightTab, setRightTab] = useState<"properties" | "analysis" | "quote" | "robotics">("properties");
   const [showSettings, setShowSettings] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
@@ -106,6 +110,11 @@ export default function Workspace() {
     }
     if (d !== docRef.current) (setDoc(d), setDirty(true), force((n) => n + 1));
   };
+
+  // glass blur and jelly motion are dropped on the Performance preset (low-end PCs)
+  useEffect(() => {
+    document.documentElement.dataset.fx = settings.performance === "performance" ? "lite" : "liquid";
+  }, [settings.performance]);
 
   // ------------------------------------------------------------ startup
   useEffect(() => {
@@ -404,7 +413,9 @@ export default function Workspace() {
       if (mod && k === "s") (e.preventDefault(), void save(e.shiftKey));
       else if (mod && k === "o") (e.preventDefault(), void open());
       else if (mod && k === "i") (e.preventDefault(), void pickImportFile().then((p) => { if (p) void importFile(p); }));
+      else if (mod && k === "n" && e.shiftKey) (e.preventDefault(), setShowGallery(true));
       else if (mod && k === "n") (e.preventDefault(), void newDoc(false));
+      else if (mod && e.shiftKey && k === "c") (e.preventDefault(), setShowCalc(true));
       else if (mod && k === "e") (e.preventDefault(), void exportStl());
       else if (mod && k === "p" && !e.shiftKey) (e.preventDefault(), void export3mf(true));
       else if (mod && k === "p" && e.shiftKey) (e.preventDefault(), void screenshot());
@@ -427,7 +438,7 @@ export default function Workspace() {
     File: [
       { label: "New", shortcut: "Ctrl+N", action: () => void newDoc(false) },
       { label: "New from example (L-bracket)", action: () => void newDoc(true) },
-      ...TEMPLATES.map((t) => ({ label: `New from template: ${t.label}`, action: () => void newFromTemplate(t.key) })),
+      { label: "New from template…", shortcut: "Ctrl+Shift+N", action: () => setShowGallery(true) },
       { label: "Open…", shortcut: "Ctrl+O", action: () => void open() },
       { label: "Import STEP / STL / OBJ…", shortcut: "Ctrl+I", action: () => void pickImportFile().then((p) => { if (p) void importFile(p); }) },
       ...recent.slice(0, 5).map((p) => ({ label: `  ${basename(p)}`, action: () => void openPath(p) })),
@@ -462,6 +473,11 @@ export default function Workspace() {
       { label: "Floor grid", checked: settings.grid, action: () => updateSettings({ grid: !settings.grid }) },
       { label: "Annotations", checked: settings.annotations, action: () => updateSettings({ annotations: !settings.annotations }) },
       { separator: true },
+      { label: "Simple mode (learning)", checked: settings.mode === "simple", action: () => updateSettings({ mode: settings.mode === "simple" ? "pro" : "simple" }) },
+      ...(["all", "mechanical", "robotics", "automotive", "aerospace"] as const).map((w) => ({
+        label: `Workspace: ${w === "all" ? "All disciplines" : w[0].toUpperCase() + w.slice(1)}`, checked: settings.workspace === w, action: () => updateSettings({ workspace: w }),
+      })),
+      { separator: true },
       { label: "Feature tree", shortcut: "Ctrl+1", checked: panels.tree, action: () => togglePanel("tree") },
       { label: "Inspector", shortcut: "Ctrl+2", checked: panels.inspector, action: () => togglePanel("inspector") },
       { label: "Dock", shortcut: "Ctrl+3", checked: panels.dock, action: () => togglePanel("dock") },
@@ -480,6 +496,8 @@ export default function Workspace() {
       { label: "Manufacturing quote", action: () => setRightTab("quote") },
       { label: "Robot reachability", action: () => setRightTab("robotics") },
       { label: "Analysis & checks", action: () => setRightTab("analysis") },
+      { separator: true },
+      { label: "Engineering calculators…", shortcut: "Ctrl+Shift+C", action: () => setShowCalc(true) },
       { separator: true },
       { label: "Command palette…", shortcut: "Ctrl+K", action: () => setShowPalette(true) },
       { label: "Settings…", shortcut: "Ctrl+,", action: () => setShowSettings(true) },
@@ -502,8 +520,24 @@ export default function Workspace() {
 
   return (
     <div className={`workspace ${panels.tree ? "" : "no-tree"} ${panels.inspector ? "" : "no-inspector"} ${panels.dock ? "" : "no-dock"}`}>
-      <MenuBar menus={menus} title={basename(path) ?? doc.name ?? "Untitled"} dirty={dirty} badge={locked ? "LOCKED" : undefined} />
-      <Ribbon catalog={catalog} op={op} onOp={setOp} onInsert={(t) => insert(t)} hasBody={doc.features.length > 0} />
+      <MenuBar menus={menus} title={basename(path) ?? doc.name ?? "Untitled"} dirty={dirty} badge={locked ? "LOCKED" : undefined}
+        extra={
+          <div className="ws-switch">
+            <select value={settings.workspace} title="Discipline: which tools the ribbon shows" aria-label="Workspace"
+              onChange={(e) => updateSettings({ workspace: e.target.value as typeof settings.workspace })}>
+              <option value="all">All disciplines</option>
+              <option value="mechanical">Mechanical</option>
+              <option value="robotics">Robotics</option>
+              <option value="automotive">Automotive</option>
+              <option value="aerospace">Aerospace</option>
+            </select>
+            <div className="tabs" role="group" aria-label="Experience">
+              <button aria-pressed={settings.mode === "simple"} title="A short set of explained tools" onClick={() => updateSettings({ mode: "simple" })}>Simple</button>
+              <button aria-pressed={settings.mode === "pro"} title="Every tool" onClick={() => updateSettings({ mode: "pro" })}>Pro</button>
+            </div>
+          </div>
+        } />
+      <Ribbon catalog={catalog} op={op} onOp={setOp} onInsert={(t) => insert(t)} hasBody={doc.features.length > 0} mode={settings.mode} workspace={settings.workspace} />
 
       <FeatureTree doc={doc} catalog={catalog} selected={selected} onSelect={setSelected} warnings={result?.warnings ?? []}
         onRename={(id, name) => patchFeature(id, { name })} onDelete={removeFeature}
@@ -573,6 +607,9 @@ export default function Workspace() {
                 }}>
                   <b>Sketch a part</b><span>Draw a 2D profile, set dimensions and fillets, extrude it.</span>
                 </button>
+                <button className="welcome-card" onClick={() => { setShowWelcome(false); setShowGallery(true); }}>
+                  <b>Browse templates</b><span>Mechanical, robotics, automotive and aerospace starters.</span>
+                </button>
                 <button className="welcome-card" onClick={() => { setShowWelcome(false); void open(); }}>
                   <b>Open a design</b><span>Continue from a .datum file, including device-locked ones.</span>
                 </button>
@@ -589,6 +626,8 @@ export default function Workspace() {
         </div>
       )}
       {showPalette && <CommandPalette menus={menus} intents={intents} onClose={() => setShowPalette(false)} />}
+      {showCalc && <CalculatorsDialog onClose={() => setShowCalc(false)} initial={{ automotive: "driveline", aerospace: "wing" }[settings.workspace as string]} />}
+      {showGallery && <TemplateGallery initial={settings.workspace} onClose={() => setShowGallery(false)} onPick={(key) => { setShowGallery(false); void newFromTemplate(key); }} />}
       {showSettings && <SettingsDialog settings={settings} onChange={updateSettings} onClose={() => setShowSettings(false)} />}
       {showAbout && (
         <div className="modal-backdrop" onPointerDown={() => setShowAbout(false)}>

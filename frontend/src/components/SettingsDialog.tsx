@@ -33,7 +33,28 @@ export default function SettingsDialog({ settings, onChange, onClose }: { settin
               <option value="draft">Draft (interactive)</option>
               <option value="fine">Fine (analysis / export)</option>
             </select>)}
+          <h3>Workspace</h3>
+          {row("Experience", "Simple shows a short set of explained tools. Pro shows every tool.",
+            <select value={settings.mode} onChange={(e) => onChange({ mode: e.target.value as Settings["mode"] })}>
+              <option value="simple">Simple (learning)</option>
+              <option value="pro">Pro (all tools)</option>
+            </select>)}
+          {row("Discipline", "Which tool groups the ribbon shows.",
+            <select value={settings.workspace} onChange={(e) => onChange({ workspace: e.target.value as Settings["workspace"] })}>
+              <option value="all">All disciplines</option>
+              <option value="mechanical">Mechanical</option>
+              <option value="robotics">Robotics</option>
+              <option value="automotive">Automotive</option>
+              <option value="aerospace">Aerospace</option>
+            </select>)}
           <h3>Viewport</h3>
+          {row("Performance", "Auto adapts resolution to hold the frame rate. Performance suits low-end PCs: fewer pixels, no shadows.",
+            <select value={settings.performance} onChange={(e) => onChange({ performance: e.target.value as Settings["performance"] })}>
+              <option value="auto">Auto (recommended)</option>
+              <option value="performance">Performance (low-end PC)</option>
+              <option value="balanced">Balanced</option>
+              <option value="quality">Quality</option>
+            </select>)}
           {row("GPU detail", "Bricks per axis. More bricks: shorter shader programs, more memory.",
             <select value={settings.bricks} onChange={(e) => onChange({ bricks: Number(e.target.value) as Settings["bricks"] })}>
               <option value={16}>16³ (low memory)</option>

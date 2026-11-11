@@ -14,7 +14,7 @@ export interface MenuItem {
 }
 export type Menus = Record<string, MenuItem[]>;
 
-export default function MenuBar({ menus, title, dirty, badge }: { menus: Menus; title: string; dirty: boolean; badge?: string }) {
+export default function MenuBar({ menus, title, dirty, badge, extra }: { menus: Menus; title: string; dirty: boolean; badge?: string; extra?: React.ReactNode }) {
   const [open, setOpen] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -81,6 +81,7 @@ export default function MenuBar({ menus, title, dirty, badge }: { menus: Menus; 
         {badge && <span className="badge">{badge}</span>}
       </span>
       <div className="spacer" data-tauri-drag-region />
+      {extra}
       <div className="window-controls">
         <button aria-label="Minimize" onClick={() => windowAction("minimize")}>
           <svg width="10" height="10" viewBox="0 0 10 10"><path d="M0 5h10" stroke="currentColor" /></svg>

@@ -47,6 +47,7 @@ export default function ViewportPanel({ insets, onReady, markers, settings, onSe
       vpRef.current = v;
       (window as unknown as { __datumViewport?: Viewport }).__datumViewport = v;
       v.setInsets(insets);
+      v.setPerformance(settings.performance);
       v.onFrame = (t) => {
         setMs(t);
         placeOverlays();
@@ -92,6 +93,7 @@ export default function ViewportPanel({ insets, onReady, markers, settings, onSe
     v.request();
   }, [mode, settings.grid, settings.orthographic, section]);
 
+  useEffect(() => vpRef.current?.setPerformance(settings.performance), [settings.performance]);
   useEffect(() => placeOverlays(), [markers, points]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     vpRef.current?.setInsets(insets);
@@ -282,7 +284,7 @@ export default function ViewportPanel({ insets, onReady, markers, settings, onSe
         ))}
       </svg>
 
-      {ms !== null && <div className="fps mono">{ms.toFixed(1)} ms</div>}
+      {ms !== null && <div className="fps mono" title="Time to draw the last frame">{ms.toFixed(1)} ms{ms > 0.5 && ms < 100 ? ` · ${Math.min(999, Math.round(1000 / ms))} fps` : ""}</div>}
       {busy && <div className="busy">Rebuilding…</div>}
       {empty && (
         <div className="empty">

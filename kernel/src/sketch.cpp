@@ -124,10 +124,22 @@ std::vector<std::array<int, 3>> triangulate(const Polygon2& poly) {
     return tris;
 }
 
+// min / max over many terms as a balanced tree: a long chain makes the register allocator keep
+// every term alive when the terms are deeper than the chain (sketches on transformed points)
+static Expr balanced(std::vector<Expr> terms, bool take_min) {
+    while (terms.size() > 1) {
+        std::vector<Expr> next;
+        for (size_t i = 0; i + 1 < terms.size(); i += 2) next.push_back(take_min ? min(terms[i], terms[i + 1]) : max(terms[i], terms[i + 1]));
+        if (terms.size() % 2) next.push_back(terms.back());
+        terms.swap(next);
+    }
+    return terms[0];
+}
+
 Expr polygon_sdf(Expr u, Expr v, const Polygon2& poly) {
     const size_t n = poly.size();
     // exact unsigned distance to the boundary
-    Expr dist;
+    std::vector<Expr> segs;
     for (size_t i = 0; i < n; ++i) {
         auto a = poly[i];
         auto b = poly[(i + 1) % n];
@@ -135,8 +147,9 @@ Expr polygon_sdf(Expr u, Expr v, const Polygon2& poly) {
         Expr wx = u - a[0], wy = v - a[1];
         Expr h = min(max((wx * ex + wy * ey) * (1.0 / len2), 0.0), 1.0);
         Expr d = length(wx - h * ex, wy - h * ey);
-        dist = i == 0 ? d : min(dist, d);
+        segs.push_back(d);
     }
+    Expr dist = balanced(segs, true);
     // inside test: union of triangles, each the intersection of its edge half-planes.
     // Collinear vertices (e.g. a point inserted on an edge) are dropped first: they do not
     // change the shape, but a zero-area triangle has a sign field that touches 0 along an
@@ -148,8 +161,7 @@ Expr polygon_sdf(Expr u, Expr v, const Polygon2& poly) {
         if (std::abs(cross2(prev, cur, next)) > 1e-9 * scale * scale) core.push_back(cur);
     }
     if (core.size() < 3) core = poly;
-    Expr sign;
-    bool first = true;
+    std::vector<Expr> tris;
     for (auto& t : triangulate(core)) {
         if (std::abs(cross2(core[t[0]], core[t[1]], core[t[2]])) < 1e-12) continue;  // degenerate
         Expr tri;
@@ -164,9 +176,9 @@ Expr polygon_sdf(Expr u, Expr v, const Polygon2& poly) {
             Expr hp = u * nx + v * ny - (a[0] * nx + a[1] * ny);
             tri = k == 0 ? hp : max(tri, hp);
         }
-        sign = first ? tri : min(sign, tri);
-        first = false;
+        tris.push_back(tri);
     }
+    Expr sign = balanced(tris, true);
     // Intersect the inside test with the profile's bounding box. Every triangle lies inside
     // it, so the sign is unchanged; but sliver triangles (from fillet arcs) have nearly
     // opposite half-planes whose intervals lose their correlation, so on their own they

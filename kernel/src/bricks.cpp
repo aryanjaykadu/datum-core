@@ -12,6 +12,10 @@ namespace {
 // last use, so the GPU interpreter needs only as many slots as values live at once
 // (typically ~10) instead of one per instruction (100+), and stays in registers.
 size_t allocate_registers(const Program& p, std::vector<Instr>& code, std::vector<uint16_t>& dst) {
+    // Leaves (constants, x, y, z) cost one instruction to produce, so they are re-emitted right
+    // before each use instead of being held in a register: shared constants would otherwise stay
+    // live from their first use to their last (hundreds of registers for mirrored sketches).
+    auto leaf = [](Op op) { return op == Op::Const || op == Op::X || op == Op::Y || op == Op::Z; };
     size_t n = p.code.size();
     std::vector<uint32_t> last_use(n, 0);
     for (uint32_t i = 0; i < n; ++i) {
@@ -24,26 +28,50 @@ size_t allocate_registers(const Program& p, std::vector<Instr>& code, std::vecto
     std::vector<uint16_t> reg(n);
     std::vector<uint16_t> free_slots;
     uint16_t next = 0;
+    auto take = [&]() -> uint16_t {
+        if (free_slots.empty()) return next++;
+        uint16_t r = free_slots.back();
+        free_slots.pop_back();
+        return r;
+    };
     for (uint32_t i = 0; i < n; ++i) {
         Instr in = p.code[i];
+        if (leaf(in.op) && i != n - 1) continue;  // emitted at each use
         int k = arity(in.op);
-        uint16_t ra = k >= 1 ? reg[in.a] : 0, rb = k >= 2 ? reg[in.b] : 0, rd = k >= 3 ? reg[in.d] : 0;
-        // operands dying here free their slot first, so the result may overwrite one
-        if (k >= 1 && last_use[in.a] == i) free_slots.push_back(ra);
-        if (k >= 2 && last_use[in.b] == i && in.b != in.a) free_slots.push_back(rb);
-        if (k >= 3 && last_use[in.d] == i && in.d != in.a && in.d != in.b) free_slots.push_back(rd);
-        uint16_t r;
-        if (!free_slots.empty()) {
-            r = free_slots.back();
-            free_slots.pop_back();
-        } else {
-            r = next++;
+        uint32_t ops[3] = {in.a, in.b, in.d};
+        uint16_t r_op[3] = {0, 0, 0};
+        std::vector<uint16_t> temps;
+        for (int j = 0; j < k; ++j) {
+            uint32_t o = ops[j];
+            if (leaf(p.code[o].op)) {
+                // the same leaf used twice by one instruction shares its temporary
+                int same = -1;
+                for (int q = 0; q < j; ++q) if (ops[q] == o) same = q;
+                if (same >= 0) { r_op[j] = r_op[same]; continue; }
+                uint16_t t = take();
+                code.push_back(p.code[o]);
+                dst.push_back(t);
+                temps.push_back(t);
+                r_op[j] = t;
+            } else {
+                r_op[j] = reg[o];
+            }
         }
+        // operands dying here (and leaf temporaries) free their slot first, so the result may reuse one
+        for (int j = 0; j < k; ++j) {
+            uint32_t o = ops[j];
+            bool dup = false;
+            for (int q = 0; q < j; ++q) dup |= ops[q] == o;
+            if (dup || leaf(p.code[o].op)) continue;
+            if (last_use[o] == i) free_slots.push_back(r_op[j]);
+        }
+        for (uint16_t t : temps) free_slots.push_back(t);
+        uint16_t r = take();
         reg[i] = r;
         if (last_use[i] == 0 && i != n - 1) free_slots.push_back(r);  // dead value
-        in.a = ra;
-        in.b = rb;
-        in.d = rd;
+        if (k >= 1) in.a = r_op[0];
+        if (k >= 2) in.b = r_op[1];
+        if (k >= 3) in.d = r_op[2];
         code.push_back(in);
         dst.push_back(r);
     }
@@ -87,9 +115,9 @@ BrickGrid build_bricks(const Program& f, Vec3 lo, Vec3 hi, int n) {
     for (size_t b = 0; b < count; ++b) {
         if (g.kind[b] != 2) continue;
         g.offset[b] = uint32_t(g.code.size());
-        g.length[b] = uint32_t(programs[b].size());
-        g.max_length = std::max(g.max_length, programs[b].size());
         g.max_registers = std::max(g.max_registers, allocate_registers(programs[b], g.code, g.dst));
+        g.length[b] = uint32_t(g.code.size() - g.offset[b]);  // leaves are re-emitted per use
+        g.max_length = std::max<size_t>(g.max_length, g.length[b]);
     }
     return g;
 }

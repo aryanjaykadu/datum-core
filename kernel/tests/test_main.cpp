@@ -622,6 +622,133 @@ TEST(loft_matches_a_frustum_and_stays_a_bound) {
     CHECK(worst_lipschitz(loft, {-25, -25, -5}, {25, 25, 35}, 9) <= 1.0 + 1e-9, "loft Lipschitz");
 }
 
+TEST(naca_wing_matches_section_area_and_taper_volume) {
+    Polygon2 sec = naca4_polygon("0012", 100);
+    double area = polygon_area(sec);
+    // a NACA 00xx section has area 0.6851 * t * c^2
+    CHECK(area > 0 && std::abs(area / (0.6851 * 0.12 * 1e4) - 1) < 0.02, "0012 area %g", area);
+    double top = 0;
+    for (auto& q : sec) top = std::max(top, q[1]);
+    CHECK(std::abs(top - 6.0) < 0.1, "0012 half thickness %g of 6", top);
+    Polygon2 cam = naca4_polygon("2412", 100);
+    double mid = 0;
+    for (auto& q : cam) mid += q[1] / cam.size();
+    CHECK(mid > 0.5, "2412 is cambered upwards (mean y %g)", mid);
+
+    Graph g;
+    P3 p = coords(g);
+    const double root = 120, taper = 0.5, span = 240;
+    Program w = compile(wing(p, "0015", root, taper, span, 20, 5));
+    Mesh m = dual_contour(w, {{-5.03, -20.07, -2.05}, {215, 45, 243}, 0.5});
+    CHECK(topology(m).watertight(), "wing mesh closed");
+    double a_root = polygon_area(naca4_polygon("0015", root));
+    double want = a_root * span * (1 + taper + taper * taper) / 3;
+    double v = mass_properties(m).volume_mm3;
+    CHECK(std::abs(v / want - 1) < 0.02, "wing volume %g vs %g", v, want);
+    // leading edge follows the sweep: at the tip it sits at span * tan(20 deg)
+    double le = span * std::tan(20 * std::numbers::pi / 180), up = span * std::tan(5 * std::numbers::pi / 180);
+    CHECK(w({le + 5, up, span - 1}) < 0 && w({le - 3, up, span - 1}) > 0, "swept tip leading edge");
+    CHECK(worst_lipschitz(w, {-10, -25, -5}, {220, 50, 245}, 21) <= 1.0 + 1e-9, "wing field is a bound");
+    // swept-wing sections are deep expressions: the GPU program must stay small anyway
+    BrickGrid grid = build_bricks(w, {-10, -25, -5}, {220, 205, 245}, 24);
+    CHECK(grid.max_registers <= 48, "wing GPU registers %zu", grid.max_registers);
+    Program nose = compile(nose_cone(p, "ogive", 50, 130));
+    BrickGrid gn = build_bricks(nose, {-26, -26, -1}, {26, 26, 131}, 24);
+    CHECK(gn.max_registers <= 24, "nose cone GPU registers %zu", gn.max_registers);
+    // mirrored halves share hundreds of constants: they must not all stay live (re-emitted per use)
+    P3 mirror{p.x, p.y, -p.z};
+    Program both = compile(unite(wing(p, "2412", 180, 0.5, 450, 20, 4), wing(mirror, "2412", 180, 0.5, 450, 20, 4)));
+    BrickGrid whole = build_bricks(both, {-500, -500, -500}, {500, 500, 500}, 1);
+    CHECK(whole.max_registers <= 32, "mirrored wing GPU registers %zu (unpruned)", whole.max_registers);
+}
+
+TEST(nose_cones_match_closed_form_volumes) {
+    Graph g;
+    P3 p = coords(g);
+    const double R = 20, L = 60;
+    Program cone = compile(nose_cone(p, "conical", 2 * R, L));
+    double vc = mass_properties(dual_contour(cone, {{-21.03, -21.07, -1.05}, {21, 21, 61}, 0.25})).volume_mm3;
+    CHECK(std::abs(vc / (std::numbers::pi * R * R * L / 3) - 1) < 0.01, "cone volume %g", vc);
+    Program ell = compile(nose_cone(p, "elliptical", 2 * R, L));
+    double ve = mass_properties(dual_contour(ell, {{-21.03, -21.07, -1.05}, {21, 21, 61}, 0.25})).volume_mm3;
+    CHECK(std::abs(ve / (2 * std::numbers::pi * R * R * L / 3) - 1) < 0.015, "half ellipsoid volume %g", ve);
+    Program og = compile(nose_cone(p, "ogive", 2 * R, L));
+    CHECK(og({0, 0, L - 0.5}) < 0 && og({0, 0, L + 0.5}) > 0 && og({R - 0.5, 0, 0.5}) < 0 && og({R + 0.5, 0, 0.5}) > 0, "ogive spans base radius to tip");
+}
+
+TEST(coil_spring_is_conservative_and_has_the_wire_volume) {
+    Graph g;
+    P3 p = coords(g);
+    const double D = 20, d = 2.5, len = 36, turns = 6, pitch = len / turns;
+    Program f = compile(coil_spring(p, D, d, len, turns));
+    // true distance to the (infinite) helix tube by brute force
+    auto truth = [&](Vec3 q) {
+        double best = 1e300;
+        for (int i = -4000; i <= 4000; ++i) {
+            double th = i * 0.005, z = th * pitch / (2 * std::numbers::pi);
+            best = std::min(best, std::sqrt(square(q.x - D / 2 * std::cos(th)) + square(q.y - D / 2 * std::sin(th)) + square(q.z - z)));
+        }
+        return best - d / 2;
+    };
+    std::mt19937 rng(8);
+    std::uniform_real_distribution<double> ux(-14, 14), uz(-12, 12);
+    double worst = -1e300;
+    for (int n = 0; n < 1500; ++n) {
+        Vec3 q{ux(rng), ux(rng), uz(rng)};
+        double fv = f(q), tv = truth(q);
+        CHECK((fv < 0) == (tv < 0) || std::abs(tv) < 0.05, "spring sign at (%g, %g, %g)", q.x, q.y, q.z);
+        worst = std::max(worst, std::abs(fv) - std::abs(tv));  // never further from the surface than the truth
+    }
+    CHECK(worst < 0.01, "spring field overestimates distance by %g", worst);
+    Mesh m = dual_contour(f, {{-12.03, -12.07, -18.55}, {12, 12, 18.6}, 0.125});
+    CHECK(topology(m).watertight(), "spring mesh closed");
+    double wire = turns * std::hypot(std::numbers::pi * D, pitch);
+    double v = mass_properties(m).volume_mm3, want = std::numbers::pi * d * d / 4 * wire;
+    CHECK(std::abs(v / want - 1) < 0.04, "spring volume %g vs %g", v, want);
+}
+
+TEST(standard_parts_have_catalogue_dimensions) {
+    Graph g;
+    P3 p = coords(g);
+    BearingSize b = bearing_size("6204");
+    CHECK(b.bore == 20 && b.od == 47 && b.width == 14, "6204 is 20 x 47 x 14");
+    Program bearing = compile(ball_bearing(p, b));
+    Mesh mb = dual_contour(bearing, {{-24.03, -24.07, -7.55}, {24, 24, 7.6}, 0.2});
+    CHECK(topology(mb).watertight(), "bearing mesh closed");
+    CHECK(bearing({10.5, 0, 0}) < 0 && bearing({9.5, 0, 0}) > 0 && bearing({23, 0, 0}) < 0 && bearing({24, 0, 0}) > 0, "bearing bore and outer diameter");
+
+    BeamSize ipe = ipe_size("IPE 100");
+    Program ib = compile(beam(p, "I-beam", ipe, 200));
+    double vi = mass_properties(dual_contour(ib, {{-28.03, -51.07, -101.05}, {28, 51, 101}, 0.25})).volume_mm3;
+    double area = 2 * 55 * 5.7 + (100 - 2 * 5.7) * 4.1;
+    CHECK(std::abs(vi / (area * 200) - 1) < 5e-3, "IPE 100 volume %g vs %g", vi, area * 200);
+    for (const char* kind : {"C-channel", "L-angle", "T-bar"})
+        CHECK(polygon_area(beam_polygon(kind, {60, 40, 4, 5})) > 0, "%s is counter-clockwise", kind);
+    Program tube = compile(beam(p, "Rect tube", {40, 30, 3, 3}, 100));
+    double vt = mass_properties(dual_contour(tube, {{-16.03, -21.07, -51.05}, {16, 21, 51}, 0.25})).volume_mm3;
+    CHECK(std::abs(vt / ((30 * 40 - 24 * 34) * 100.0) - 1) < 5e-3, "tube volume %g", vt);
+}
+
+TEST(brake_disc_and_wheel_are_solid_parts) {
+    Graph g;
+    P3 p = coords(g);
+    Program disc = compile(brake_disc(p, 280, 22, 65, 5, 112, 24));
+    Mesh md = dual_contour(disc, {{-141.03, -141.07, -12.05}, {141, 141, 12}, 0.5});
+    CHECK(topology(md).watertight(), "disc mesh closed");
+    double pi = std::numbers::pi;
+    double want = (pi * (140.0 * 140 - 32.5 * 32.5) - 5 * pi * 6.5 * 6.5 - 48 * pi * 9) * 22;
+    double v = mass_properties(md).volume_mm3;
+    CHECK(std::abs(v / want - 1) < 0.01, "disc volume %g vs %g", v, want);
+    CHECK(disc({56, 0, 0}) > 0 && disc({56 * std::cos(0.6), 56 * std::sin(0.6), 0}) < 0, "bolt hole on the pitch circle");
+
+    Program wh = compile(wheel(p, 381, 165, 5, 5, 112, 57.1));
+    Mesh mw = dual_contour(wh, {{-204.03, -204.07, -84.05}, {204, 204, 84}, 1.0});
+    CHECK(topology(mw).watertight(), "wheel mesh closed");
+    CHECK(wh({0, 0, 60}) > 0, "centre bore is open");
+    CHECK(wh({189, 0, 0}) < 0 && wh({150, 30, 0}) > 0, "barrel is a shell");
+    CHECK(worst_lipschitz(wh, {-200, -200, -85}, {200, 200, 85}, 31) <= 1.0 + 1e-9, "wheel field is a bound");
+}
+
 int main() {
     for (auto& t : registry()) {
         int before = failures;

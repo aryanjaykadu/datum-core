@@ -362,3 +362,125 @@ input.linked { color: var(--teal, #2dd4bf); }
 .history-row.current .dot { background: var(--teal, #2dd4bf); box-shadow: 0 0 0 3px rgba(45,212,191,.25); }
 .history-row.undone { opacity: .45; }
 .history-row em { font-style: normal; color: var(--text-dim); font-size: 11px; }
+
+/* ---- workspace switch (title bar) */
+.ws-switch { display: flex; align-items: center; gap: 8px; margin-right: 10px; }
+.ws-switch select { height: 26px; font-size: 12px; padding: 0 8px; border-radius: 7px; }
+.ws-switch .tabs button { padding: 3px 10px; font-size: 12px; }
+
+/* ---- simple mode: larger, explained tools */
+.ribbon.simple .btn { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 7px 12px; text-align: left; height: auto; }
+.ribbon.simple .btn small { font-size: 10.5px; color: var(--text-dim); font-weight: 400; white-space: nowrap; }
+.ribbon.simple .ribbon-group > div { align-items: stretch; }
+
+/* ---- calculators */
+.modal.calc { width: min(760px, 94vw); }
+.calc-body { display: grid; grid-template-columns: 180px 1fr; min-height: 380px; }
+.calc-nav { display: flex; flex-direction: column; gap: 2px; padding: 8px; border-right: 1px solid var(--hairline); }
+.calc-nav button { display: flex; flex-direction: column; align-items: flex-start; padding: 7px 10px; border-radius: 8px; background: none; border: 0; color: var(--text); font-size: 13px; cursor: pointer; text-align: left; }
+.calc-nav button small { font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .06em; }
+.calc-nav button:hover { background: rgba(255,255,255,.06); }
+.calc-nav button[aria-pressed="true"] { background: rgba(45,212,191,.14); }
+.calc-main { padding: 6px 16px 14px; overflow: auto; max-height: 70vh; }
+.calc-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px; margin: 8px 0 12px; }
+.calc-results { border-top: 1px solid var(--hairline); padding-top: 8px; }
+.calc-results .kv span:last-child { font-weight: 600; }
+.note.small { font-size: 11px; margin-top: 10px; }
+
+/* ---- template gallery */
+.modal.gallery { width: min(820px, 94vw); }
+.chips { display: flex; gap: 6px; margin: 4px 0 12px; flex-wrap: wrap; }
+.chips button { padding: 4px 12px; border-radius: 999px; border: 1px solid var(--hairline); background: none; color: var(--text-dim); font-size: 12px; cursor: pointer; }
+.chips button[aria-selected="true"] { background: rgba(45,212,191,.16); color: var(--text); border-color: rgba(45,212,191,.5); }
+.gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; margin-bottom: 8px; }
+.gallery-grid .welcome-card em { font-style: normal; font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--teal, #2dd4bf); }
+.gallery-grid .domain-automotive em { color: #f9b32e; }
+.gallery-grid .domain-aerospace em { color: #7cb3ff; }
+.gallery-grid .domain-robotics em { color: #c59bff; }
+
+/* =====================================================================================
+   Liquid glass. Original CSS for this app: a thick-glass rim (bright top-left edge, soft
+   inner shadow bottom-right), a moving sheen, and jelly motion on press, tabs and menus.
+   :root[data-fx="lite"] (Performance preset) removes blur and motion for low-end PCs.
+   ===================================================================================== */
+:root {
+  --lg-rim: inset 1px 1px 0 rgba(255, 255, 255, 0.28), inset -1px -1px 0 rgba(255, 255, 255, 0.07), inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+  --lg-depth: inset 0 -14px 24px -18px rgba(0, 0, 0, 0.55), inset 0 18px 26px -22px rgba(255, 255, 255, 0.22);
+  --lg-drop: 0 10px 34px -10px rgba(0, 0, 0, 0.6), 0 2px 6px rgba(0, 0, 0, 0.25);
+  --lg-jelly: linear(0, 0.36 6%, 0.86 14%, 1.12 22%, 1.06 30%, 0.97 40%, 1.01 54%, 1 70%, 1);
+}
+.glass, .glass-strong {
+  backdrop-filter: blur(28px) saturate(185%) brightness(1.08);
+  -webkit-backdrop-filter: blur(28px) saturate(185%) brightness(1.08);
+  background-image:
+    radial-gradient(120% 80% at 0% 0%, rgba(255, 255, 255, 0.10), transparent 55%),
+    radial-gradient(90% 70% at 100% 100%, rgba(79, 209, 197, 0.07), transparent 60%);
+  box-shadow: var(--lg-rim), var(--lg-depth), var(--lg-drop);
+  border-color: rgba(255, 255, 255, 0.10);
+}
+/* buttons: glass capsules that squash when pressed and spring back */
+.btn, .vp-toolbar button, .ws-switch select {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.13), rgba(255, 255, 255, 0.03) 55%, rgba(255, 255, 255, 0.07));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.26), inset 0 -1px 0 rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.3);
+  border-color: rgba(255, 255, 255, 0.11);
+  transition: transform 420ms var(--lg-jelly), background 160ms, border-color 160ms, box-shadow 160ms;
+}
+.btn:hover:not(:disabled), .vp-toolbar button:hover {
+  border-color: rgba(255, 255, 255, 0.26);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4), inset 0 -1px 0 rgba(0, 0, 0, 0.3), 0 4px 14px -4px rgba(79, 209, 197, 0.35);
+}
+.btn:active:not(:disabled), .vp-toolbar button:active, .welcome-card:active, .tabs button:active {
+  transform: scale(0.93, 0.9);
+  transition: transform 70ms ease-out;
+}
+.btn.primary { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 4px 16px -4px rgba(79, 209, 197, 0.5); }
+/* segmented controls: the selected pill is a raised drop of glass that stretches in */
+.tabs { background: rgba(0, 0, 0, 0.28); box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.5), 0 1px 0 rgba(255, 255, 255, 0.06); border-radius: 999px; }
+.tabs button { border-radius: 999px; transition: transform 420ms var(--lg-jelly), color 160ms; }
+.tabs button[aria-selected="true"], .tabs button[aria-pressed="true"] {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0.08));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), inset 0 -1px 0 rgba(0, 0, 0, 0.25), 0 3px 10px -2px rgba(0, 0, 0, 0.5);
+  animation: lg-pill 460ms var(--lg-jelly);
+}
+@keyframes lg-pill { from { transform: scale(0.82, 0.9); } 40% { transform: scale(1.07, 0.96); } }
+/* menus and dialogs grow out of their origin like a drop, with a slight overshoot */
+.dropdown { transform-origin: 12% 0; animation: lg-drop 380ms var(--lg-jelly) both; border-radius: 14px; }
+@keyframes lg-drop { from { opacity: 0; transform: scale(0.72, 0.5); border-radius: 22px; } 35% { opacity: 1; } }
+.dropdown button { border-radius: 9px; transition: background 120ms, transform 300ms var(--lg-jelly); }
+.dropdown button:hover:not(:disabled) { background: linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.06)); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25); }
+.modal { animation: lg-modal 460ms var(--lg-jelly) both; border-radius: 18px; }
+@keyframes lg-modal { from { opacity: 0; transform: scale(0.86, 0.8) translateY(14px); } 30% { opacity: 1; } }
+.welcome-card { background: linear-gradient(160deg, rgba(255, 255, 255, 0.10), rgba(255, 255, 255, 0.02)); box-shadow: var(--lg-rim); transition: transform 420ms var(--lg-jelly), border-color 160ms, box-shadow 200ms; }
+.welcome-card:hover { transform: translateY(-3px) scale(1.015); box-shadow: var(--lg-rim), 0 14px 30px -14px rgba(79, 209, 197, 0.55); }
+/* sliders: a glass bead on a recessed track */
+input[type="range"] { -webkit-appearance: none; appearance: none; height: 6px; border-radius: 999px; background: rgba(0, 0, 0, 0.35); box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.07); }
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 22px; height: 16px; border-radius: 999px; cursor: grab;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.85), rgba(255, 255, 255, 0.45));
+  box-shadow: inset 0 1px 0 #fff, inset 0 -2px 3px rgba(0, 0, 0, 0.18), 0 3px 8px rgba(0, 0, 0, 0.5);
+  transition: transform 380ms var(--lg-jelly);
+}
+input[type="range"]:active::-webkit-slider-thumb { transform: scale(1.35, 1.15); cursor: grabbing; }
+/* text fields: recessed glass wells that light up on focus */
+.field input, .prop select, .prop > input, .param-row input {
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.45), 0 1px 0 rgba(255, 255, 255, 0.06);
+  transition: box-shadow 180ms, border-color 180ms;
+}
+.field input:focus, .prop select:focus, .prop > input:focus, .param-row input:focus {
+  outline: none; border-color: rgba(79, 209, 197, 0.6);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.45), 0 0 0 3px rgba(79, 209, 197, 0.18);
+}
+.tree-row { transition: background 140ms, transform 380ms var(--lg-jelly); }
+.tree-row:active { transform: scale(0.985, 0.95); }
+.annotation, .measure-readout, .dfm-legend, .section-slider { box-shadow: var(--lg-rim), var(--lg-drop); }
+
+:root[data-fx="lite"] .glass, :root[data-fx="lite"] .glass-strong {
+  backdrop-filter: none; -webkit-backdrop-filter: none; background-color: rgba(22, 24, 30, 0.94);
+}
+:root[data-fx="lite"] *, :root[data-fx="lite"] *::before { animation-duration: 1ms !important; transition-duration: 1ms !important; }
+@media (prefers-reduced-motion: reduce) {
+  .tabs button[aria-selected="true"], .tabs button[aria-pressed="true"], .dropdown, .modal { animation: none; }
+}
+/* overlays sit above busy content: denser glass keeps their text readable */
+.modal.glass-strong, .dropdown.glass-strong { background-color: rgba(17, 19, 25, 0.985); backdrop-filter: blur(36px) saturate(170%); -webkit-backdrop-filter: blur(36px) saturate(170%); }
+.modal-backdrop { backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); }

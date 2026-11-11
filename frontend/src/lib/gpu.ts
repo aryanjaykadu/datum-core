@@ -49,6 +49,14 @@ export class Viewport {
   cloud = { visible: true, mode: 0 as 0 | 1, alpha: 0.16, voxel: 1, threshold: 0.05 };
 
   private anim = 0;
+  /** Resolution scale while the camera moves; steered every frame towards perf.targetMs. */
+  private dyn = 0.5;
+  /** Resolution scale of the full-quality still; lowered when a still takes too long. */
+  private still = 1;
+  private rendering = false;
+  private again = false;
+  private lastPoke = 0;
+  perf = { targetMs: 16.7, maxPixels: 3.5e6, shadows: true, auto: true };
   private spin: [number, number] = [0, 0];
   cam = { yaw: VIEWS.iso[0], pitch: VIEWS.iso[1], dist: 200, target: [0, 0, 0] as Vec3, fov: 32, ortho: false };
   mode: DisplayMode = "shaded";
@@ -320,11 +328,18 @@ export class Viewport {
   // ---------------------------------------------------------------- rendering
   poke() {
     this.interacting = true;
+    this.lastPoke = performance.now();
     clearTimeout(this.idle);
-    this.idle = window.setTimeout(() => {
-      this.interacting = false;
-      this.request();
-    }, 150);
+    this.idle = window.setTimeout(() => this.settle(), 160);
+    this.request();
+  }
+  /** Input stopped: draw the full-quality still, but never while a frame is in flight or input is still arriving. */
+  private settle() {
+    if (this.rendering || performance.now() - this.lastPoke < 150) {
+      this.idle = window.setTimeout(() => this.settle(), 80);
+      return;
+    }
+    this.interacting = false;
     this.request();
   }
   request() {
@@ -349,14 +364,28 @@ export class Viewport {
       this.canvas.width, this.canvas.height, MODE_INDEX[this.mode], this.partLo[2],
       axis[0] * sign, axis[1] * sign, axis[2] * sign, sec.offset * sign,
       this.grid ? 1 : 0, pickX, pickY, 0,
-      ...this.lensShift(), this.interacting ? 0 : 1, 0,
+      ...this.lensShift(), this.interacting || !this.perf.shadows ? 0 : 1, 0,
     ]));
   }
 
+  /** Speed/quality preset. "auto" starts balanced and backs off on slow GPUs. */
+  setPerformance(preset: "auto" | "quality" | "balanced" | "performance") {
+    this.perf = {
+      auto: { targetMs: 16.7, maxPixels: 3.5e6, shadows: true, auto: true },
+      quality: { targetMs: 33, maxPixels: 3.5e6, shadows: true, auto: false },
+      balanced: { targetMs: 16.7, maxPixels: 2.5e6, shadows: true, auto: false },
+      performance: { targetMs: 11, maxPixels: 1.2e6, shadows: false, auto: false },
+    }[preset];
+    this.request();
+  }
+  /** Fraction of full resolution used for the last frame (1 when idle). */
+  get renderScale() {
+    return this.interacting ? this.dyn : this.still;
+  }
   private resize(scale: number) {
-    // full quality is capped at ~3.5 MP: beyond that the ray marcher costs more than it shows
+    // full quality is capped (~3.5 MP by default): beyond that the ray marcher costs more than it shows
     const css = this.canvas.clientWidth * this.canvas.clientHeight || 1;
-    const dpr = Math.min(window.devicePixelRatio || 1, Math.sqrt(3.5e6 / css));
+    const dpr = Math.min(window.devicePixelRatio || 1, Math.sqrt(this.perf.maxPixels / css));
     const w = Math.max(1, Math.floor(this.canvas.clientWidth * dpr * scale));
     const h = Math.max(1, Math.floor(this.canvas.clientHeight * dpr * scale));
     if (this.canvas.width !== w || this.canvas.height !== h) {
@@ -368,7 +397,14 @@ export class Viewport {
   private async render() {
     this.queued = false;
     if (!this.scene || !this.pipeline || !this.bind) return;  // the cloud is drawn over a scene
-    this.resize(this.interacting ? 0.5 : 1);
+    // one frame on the GPU at a time: a second submit would only queue behind the first
+    if (this.rendering) {
+      this.again = true;
+      return;
+    }
+    this.rendering = true;
+    const moving = this.interacting;
+    this.resize(moving ? this.dyn : this.still);
     this.writeUniforms();
     const enc = this.device.createCommandEncoder();
     if (!this.depth || this.depth.width !== this.canvas.width || this.depth.height !== this.canvas.height) {
@@ -392,14 +428,38 @@ export class Viewport {
     const t0 = performance.now();
     this.device.queue.submit([enc.finish()]);
     await this.device.queue.onSubmittedWorkDone();
-    this.onFrame?.(performance.now() - t0, this.canvas.width, this.canvas.height);
+    const ms = performance.now() - t0;
+    if (moving) {
+      // frame cost scales with pixel count: move the scale towards the target, gently
+      const k = Math.max(0.7, Math.min(1.2, Math.sqrt(this.perf.targetMs / Math.max(ms, 0.5))));
+      this.dyn = Math.max(0.12, Math.min(1, this.dyn * k));
+    } else {
+      if (this.perf.auto && ms > 150 && this.perf.shadows) {
+        // a slow GPU: full-quality stills are costing too much, so drop shadows and pixels for good
+        this.perf.shadows = false;
+        this.perf.maxPixels = Math.min(this.perf.maxPixels, 1.5e6);
+      }
+      // the GPU cannot be interrupted: keep stills short so the next input is not stuck behind one
+      if (ms > 250) this.still = Math.max(0.3, this.still * Math.sqrt(250 / ms));
+      else if (ms < 100 && this.still < 1) this.still = Math.min(1, this.still * 1.15);
+    }
+    this.rendering = false;
+    this.onFrame?.(ms, this.canvas.width, this.canvas.height);
+    if (this.again) {
+      this.again = false;
+      this.request();
+    }
   }
 
   /** Full-quality frame as a PNG (the drawing buffer is read in the same task as the submit). */
-  capture(): Promise<Blob | null> {
+  async capture(): Promise<Blob | null> {
     this.interacting = false;
     clearTimeout(this.idle);
+    while (this.rendering) await new Promise((r) => setTimeout(r, 30));
+    const keep = this.still;
+    this.still = 1;  // a saved image is always full resolution
     void this.render();
+    this.still = keep;
     return new Promise((resolve) => this.canvas.toBlob(resolve, "image/png"));
   }
 

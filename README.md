@@ -36,6 +36,7 @@ kernel/build/dk_tests.exe                                     # kernel: geometry
 python ../kernel/tests/engine_smoke.py ../kernel/build/dk_engine.exe   # engine protocol
 npm run test:urdf                                                # URDF import against the real kernel
 npm run test:params                                              # parameter expressions
+npm run test:calc                                                # engineering calculators
 cd src-tauri && cargo test --release                             # .datum encryption
 ```
 
@@ -46,6 +47,15 @@ cd src-tauri && cargo test --release                             # .datum encryp
 - **Manufacturability view**: wall thickness (green > 1.5 mm, amber, red < 0.5 mm) and > 45° overhangs; the status bar shows the wall under the cursor.
 - **Output**: STL, 3MF, *Send to slicer* (Ctrl+P opens the 3MF in your default slicer), PNG screenshots, 3D-print time/filament estimate.
 - **Workflow**: view cube, animated camera, zoom to cursor, double-click a face to look at it, History timeline, starter templates (File → New from template).
+
+## Disciplines and workspaces (v1.2)
+
+- **Workspaces**: switch between Mechanical, Robotics, Automotive and Aerospace (title bar); the ribbon shows that discipline's tools.
+- **Simple / Pro**: Simple mode shows a short set of tools with one-line explanations; Pro shows everything.
+- **New parts**: NACA wing (sweep, taper, dihedral), nose cones (ogive, conical, elliptical, parabolic), coil springs, ISO ball bearings (608, 6000–6205), structural beams (IPE 80–200, channel, angle, T, tube), drilled brake discs, spoked wheels.
+- **Engineering calculators** (Tools, Ctrl+Shift+C): bolt torque, gear pair, beam bending, coil spring, speed and braking, wing sizing.
+- **Templates** (File → New from template, Ctrl+Shift+N): 12 starters across the four disciplines.
+- **Performance presets** (Settings → Viewport): Auto adapts resolution to hold the frame rate; Performance suits low-end PCs (fewer pixels, no shadows, no glass blur or animation).
 
 ## Sketch and import
 
