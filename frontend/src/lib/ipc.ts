@@ -15,6 +15,16 @@ export interface Feature {
   params?: Record<string, unknown>;
 }
 
+export interface Study {
+  fixtures: { center: Vec3; radius: number }[];
+  loads: { center: Vec3; radius: number; force: Vec3 }[];
+}
+export interface StressResult {
+  max_mpa: number; p99_mpa: number; max_displacement_mm: number; yield_mpa: number; safety_factor: number;
+  iterations: number; converged: boolean; seconds: number; voxel_mm: number; voxels: number;
+  fixed_nodes: number; loaded_nodes: number; material: string;
+}
+
 export interface DatumDocument {
   version: 1;
   robots?: Record<string, import("./urdf").RobotDef>;
@@ -24,6 +34,8 @@ export interface DatumDocument {
   root: string;
   /** Named design values; feature fields reference them as "=name * 2" (resolved before the kernel). */
   parameters?: Record<string, string | number>;
+  /** Strength study: where the part is held and pushed (mm, N). Saved with the design. */
+  study?: Study;
   features: Feature[];
 }
 
@@ -120,6 +132,12 @@ export const kernel = {
   robotIk: (preset: string, qDeg: number[], target: Vec3, base: Vec3, robot?: import("./urdf").RobotDef) =>
     invoke<{ q_deg: number[]; error_mm: number; reached: boolean; iterations: number }>("engine_call", {
       method: "robot_ik", params: { ...(robot ? { robot } : { preset }), q_deg: qDeg, target, base } }),
+  stress: async (study: Study, voxels = 40000): Promise<{ stats: StressResult; vertexStress: Float32Array }> => {
+    const buf = await invoke<ArrayBuffer>("engine_binary", { method: "stress", params: { ...study, voxels } });
+    const len = new DataView(buf).getUint32(0, true);
+    const stats = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 4, len))) as StressResult;
+    return { stats, vertexStress: new Float32Array(buf.slice(4 + len)) };
+  },
   featureAt: (point: Vec3) => invoke<{ feature: string }>("engine_call", { method: "feature_at", params: { point } }),
   exportStl: (path: string) => invoke<{ path: string; triangles: number }>("engine_call", { method: "export_stl", params: { path } }),
 };

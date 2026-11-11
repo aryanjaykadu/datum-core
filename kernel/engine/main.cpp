@@ -33,6 +33,7 @@
 #include "dk/document.hpp"
 #include "dk/mesh.hpp"
 #include "dk/meshfield.hpp"
+#include "dk/fea.hpp"
 #include "dk/robot.hpp"
 
 #ifdef _WIN32
@@ -52,6 +53,8 @@ struct Session {
     Vec3 lo, hi;
     std::string material = "al6061t6";
     json doc;  // the evaluated document (for feature picking)
+    FeaGrid fea_grid;   // last stress study (for stress-graded lattices)
+    FeaResult fea;
     Accessibility access;
     bool ready = false;
 };
@@ -322,7 +325,49 @@ int main() {
             else if (method == "catalog") write_response({{"id", id}, {"result", catalog()}});
             else if (method == "example") write_response({{"id", id}, {"result", example_bracket()}});
             else if (method == "quote") write_response({{"id", id}, {"result", quote(session, params)}});
-            else if (method == "feature_at") {
+            else if (method == "stress") {
+                // linear-elastic study of the current part: per-vertex von Mises (f32) + summary
+                if (!session.ready) throw std::runtime_error("evaluate a document first");
+                auto spheres = [&](const char* key, bool with_force) {
+                    std::vector<FeaSphere> out;
+                    for (auto& s : params.value(key, json::array())) {
+                        json c = s.at("center");
+                        FeaSphere f{{c[0].get<double>(), c[1].get<double>(), c[2].get<double>()}, s.at("radius").get<double>()};
+                        if (with_force) {
+                            json F = s.at("force");
+                            f.force = {F[0].get<double>(), F[1].get<double>(), F[2].get<double>()};
+                        }
+                        out.push_back(f);
+                    }
+                    return out;
+                };
+                auto fixtures = spheres("fixtures", false), loads = spheres("loads", true);
+                if (fixtures.empty()) throw std::runtime_error("add at least one fixture (where the part is held)");
+                if (loads.empty()) throw std::runtime_error("add at least one load (where force is applied)");
+                double target = std::clamp(params.value("voxels", 40000.0), 2000.0, 400000.0);
+                double h = voxel_size_for(session.lo, session.hi, target);
+                Vec3 pad{h, h, h};
+                session.fea_grid = voxelize(session.program, session.lo - pad, session.hi + pad, h);
+                const Material& m = material(session.material);
+                session.fea = solve_elastic(session.fea_grid, m.youngs_gpa * 1000.0, 0.33, fixtures, loads);
+                std::string bin;
+                bin.reserve(session.mesh.vertices.size() * 4);
+                for (auto& v : session.mesh.vertices) {
+                    float s = float(sample_node_field(session.fea_grid, session.fea.node_vm, v));
+                    bin.append(reinterpret_cast<const char*>(&s), 4);
+                }
+                // peak away from clamp and load spots (those are singular in any linear FEA)
+                std::vector<float> sorted;
+                for (float v : session.fea.von_mises) if (v > 0) sorted.push_back(v);
+                std::sort(sorted.begin(), sorted.end());
+                double p99 = sorted.empty() ? 0 : sorted[size_t(0.99 * (sorted.size() - 1))];
+                write_response({{"id", id}, {"result", {
+                    {"max_mpa", session.fea.max_vm}, {"p99_mpa", p99}, {"max_displacement_mm", session.fea.max_displacement},
+                    {"yield_mpa", m.yield_mpa}, {"safety_factor", m.yield_mpa / std::max(p99, 1e-9)},
+                    {"iterations", session.fea.iterations}, {"converged", session.fea.converged}, {"seconds", session.fea.seconds},
+                    {"voxel_mm", h}, {"voxels", session.fea_grid.solid_count()},
+                    {"fixed_nodes", session.fea.fixed_nodes}, {"loaded_nodes", session.fea.loaded_nodes}, {"material", m.name}}}}, &bin);
+            } else if (method == "feature_at") {
                 if (!session.ready) throw std::runtime_error("evaluate a document first");
                 json pt = params.at("point");
                 double span = std::max({session.hi.x - session.lo.x, session.hi.y - session.lo.y, session.hi.z - session.lo.z});

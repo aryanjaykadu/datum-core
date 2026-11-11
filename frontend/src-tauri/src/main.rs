@@ -75,6 +75,12 @@ fn main() {
                 api.prevent_close();
                 let _ = window.emit("app://close-requested", ());
             }
+            // the main window is gone: always end the process (and with it the engine), even if
+            // something else would keep the event loop alive
+            WindowEvent::Destroyed if window.label() == "main" => {
+                support::log("info", "main window closed");
+                window.app_handle().exit(0);
+            }
             _ => {}
         })
         .build(tauri::generate_context!())

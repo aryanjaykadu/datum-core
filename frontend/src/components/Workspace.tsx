@@ -23,6 +23,7 @@ import QuotePanel from "./QuotePanel";
 import RoboticsPanel from "./RoboticsPanel";
 import RunLog, { type LogLine } from "./RunLog";
 import ToolRail from "./ToolRail";
+import StrengthPanel from "./StrengthPanel";
 import ThemeQuick from "./ThemeQuick";
 import Icon from "./Icon";
 import HistoryPanel from "./HistoryPanel";
@@ -37,6 +38,7 @@ const basename = (p: string | null) => (p ? p.split(/[\\/]/).pop()! : null);
 export default function Workspace() {
   const [settings, updateSettings] = useSettings();
   const robotPick = useRef<((p: Vec3) => void) | null>(null);
+  const strengthPick = useRef<((p: PickResult) => void) | null>(null);
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
   const [catalog, setCatalog] = useState<Catalog | null>(null);
@@ -53,7 +55,7 @@ export default function Workspace() {
   const [dock, setDock] = useState<"log" | "graph" | "history">("graph");
   const [showCalc, setShowCalc] = useState(false);
   const [showGallery, setShowGallery] = useState(false);
-  const [rightTab, setRightTab] = useState<"properties" | "analysis" | "quote" | "robotics">("properties");
+  const [rightTab, setRightTab] = useState<"properties" | "strength" | "analysis" | "quote" | "robotics">("properties");
   const [showSettings, setShowSettings] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
   const [showPalette, setShowPalette] = useState(false);
@@ -534,8 +536,10 @@ export default function Workspace() {
     const list: Marker[] = [{ id: "com", label: "Centre of mass", position: result.geometry.centroid_mm, tone: "teal" }];
     result.analysis.findings.filter((f) => f.suspicious).slice(0, 6).forEach((f, i) =>
       list.push({ id: `void${i}`, label: `Hidden cavity ⌀${f.size_mm.toFixed(2)}`, position: f.centre_mm, tone: "fail" }));
+    doc.study?.fixtures.forEach((f, i) => list.push({ id: `fix${i}`, label: "Held", position: f.center, tone: "teal" }));
+    doc.study?.loads.forEach((l, i) => list.push({ id: `load${i}`, label: `${Math.round(Math.hypot(...l.force))} N`, position: l.center, tone: "amber" }));
     return list;
-  }, [result]);
+  }, [result, doc.study]);
 
   return (
     <div className={`workspace ${panels.tree ? "" : "no-tree"} ${panels.inspector ? "" : "no-inspector"} ${panels.dock ? "" : "no-dock"}`}>
@@ -574,6 +578,7 @@ export default function Workspace() {
         onReady={(v) => { vp.current = v; const t = resolveTheme(settingsRef.current.theme, settingsRef.current.accent, settingsRef.current.custom); v.colours = viewportColours(t); v.glass.tint = glassTint(t); }} markers={markers} settings={settings} onSettings={updateSettings}
         onPickPoint={(hit) => {
           if (robotPick.current && rightTab === "robotics") return robotPick.current(hit.position);
+          if (strengthPick.current && rightTab === "strength") return strengthPick.current(hit);
           kernel.featureAt(hit.position).then((r) => {
             if (!r.feature) return;
             click(262, 0.35);
@@ -599,9 +604,9 @@ export default function Workspace() {
       <aside className="glass area-inspector scroll">
         <div className="panel-title">
           <div className="tabs" role="tablist">
-            {(["properties", "analysis", "quote", "robotics"] as const).map((t) => (
-              <button key={t} role="tab" aria-selected={rightTab === t} onClick={() => setRightTab(t)} title={{ properties: "Edit the selected feature", analysis: "Mass, checks and print estimate", quote: "Manufacturing cost estimate", robotics: "Robot reach and posing" }[t]}>
-                <Icon name={t === "robotics" ? "Robotics" : t} size={15} />{{ properties: "Edit", analysis: "Analyse", quote: "Quote", robotics: "Robot" }[t]}
+            {(["properties", "strength", "analysis", "robotics", "quote"] as const).map((t) => (
+              <button key={t} role="tab" aria-selected={rightTab === t} onClick={() => setRightTab(t)} title={{ properties: "Edit the selected feature", strength: "Stress analysis: will it hold?", analysis: "Mass, checks and print estimate", quote: "Manufacturing cost estimate", robotics: "Robot reach and posing" }[t]}>
+                <Icon name={{ properties: "properties", strength: "strength", analysis: "analysis", quote: "quote", robotics: "Robotics" }[t]} size={15} />{{ properties: "Edit", strength: "Strength", analysis: "Analyse", quote: "Quote", robotics: "Robot" }[t]}
               </button>
             ))}
           </div>
@@ -609,6 +614,11 @@ export default function Workspace() {
         {rightTab === "properties" && (
           <PropertyPanel doc={doc} catalog={catalog} selected={selected} settings={settings} onChange={patchFeature}
             onDocChange={(p) => commit({ ...doc, ...p })} onDelete={removeFeature} />
+        )}
+        {rightTab === "strength" && (
+          <StrengthPanel doc={doc} result={result} onDocChange={(p) => commit({ ...docRef.current, ...p })}
+            setPickHandler={(h) => (strengthPick.current = h)}
+            onStress={(v, scale) => vp.current?.setStress(v, scale)} onLog={(level, msg) => pushLog(level, "strength", msg)} />
         )}
         {rightTab === "analysis" && <Inspector result={result} settings={settings} />}
         {rightTab === "quote" && <QuotePanel result={result} catalog={catalog} material={doc.material} />}

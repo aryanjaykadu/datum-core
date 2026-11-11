@@ -49,11 +49,12 @@ pub async fn engine_binary(app: AppHandle, method: String, params: Option<Value>
         "scene" => "scene",
         "mesh" => "mesh",
         "robot_reach" => "robot_reach",
+        "stress" => "stress",
         other => return Err(format!("not a binary method: {other}")),
     };
     let reply = call(app, method, params.unwrap_or(json!({}))).await?;
     let data = reply.binary.ok_or("engine sent no data")?;
-    if method != "robot_reach" {
+    if method != "robot_reach" && method != "stress" {
         return Ok(Response::new(data));
     }
     // statistics travel with the voxels: u32 JSON length | JSON | float32 voxel records

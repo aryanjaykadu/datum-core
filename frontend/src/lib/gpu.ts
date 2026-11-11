@@ -65,6 +65,10 @@ export class Viewport {
   private meshIB: GPUBuffer | null = null;
   private meshBind: GPUBindGroup | null = null;
   private meshIndices = 0;
+  private meshVertices = 0;
+  private meshData: Float32Array<ArrayBuffer> | null = null;
+  /** The mesh carries stress colours: draw it, not the ray-marched field. */
+  stressShown = false;
   /** This frame draws the part from its triangle mesh (background-only ray pass). */
   private meshFrame = false;
   /** Stills of this scene are slow on this GPU: draw them from the mesh too. */
@@ -416,13 +420,17 @@ export class Viewport {
       const [magic, , nv, ni] = new Uint32Array(buffer, 0, 4);
       if (magic === 0x48534d44 && buffer.byteLength >= 16 + nv * 24 + ni * 4 && ni > 0) {
         const pos = new Float32Array(buffer, 16, nv * 3), nrm = new Float32Array(buffer, 16 + nv * 12, nv * 3);
-        const vb = new Float32Array(nv * 6);
+        const vb = new Float32Array(nv * 7);
         for (let i = 0; i < nv; i++) {
-          vb[i * 6] = pos[i * 3]; vb[i * 6 + 1] = pos[i * 3 + 1]; vb[i * 6 + 2] = pos[i * 3 + 2];
-          vb[i * 6 + 3] = nrm[i * 3]; vb[i * 6 + 4] = nrm[i * 3 + 1]; vb[i * 6 + 5] = nrm[i * 3 + 2];
+          vb[i * 7] = pos[i * 3]; vb[i * 7 + 1] = pos[i * 3 + 1]; vb[i * 7 + 2] = pos[i * 3 + 2];
+          vb[i * 7 + 3] = nrm[i * 3]; vb[i * 7 + 4] = nrm[i * 3 + 1]; vb[i * 7 + 5] = nrm[i * 3 + 2];
+          vb[i * 7 + 6] = -1;  // no stress value
         }
+        this.meshVertices = nv;
+        this.stressShown = false;
         this.meshVB = this.device.createBuffer({ size: vb.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
         this.device.queue.writeBuffer(this.meshVB, 0, vb);
+        this.meshData = vb;
         this.meshIB = this.device.createBuffer({ size: ni * 4, usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST });
         this.device.queue.writeBuffer(this.meshIB, 0, new Uint32Array(buffer, 16 + nv * 24, ni));
         this.meshIndices = ni;
@@ -430,8 +438,9 @@ export class Viewport {
           const module = this.device.createShaderModule({ code: MESH_WGSL });
           this.meshPipeline = this.device.createRenderPipeline({
             layout: "auto",
-            vertex: { module, entryPoint: "vs", buffers: [{ arrayStride: 24, attributes: [
-              { shaderLocation: 0, offset: 0, format: "float32x3" }, { shaderLocation: 1, offset: 12, format: "float32x3" }] }] },
+            vertex: { module, entryPoint: "vs", buffers: [{ arrayStride: 28, attributes: [
+              { shaderLocation: 0, offset: 0, format: "float32x3" }, { shaderLocation: 1, offset: 12, format: "float32x3" },
+              { shaderLocation: 2, offset: 24, format: "float32" }] }] },
             fragment: { module, entryPoint: "fs", targets: [{ format: this.format }] },
             primitive: { topology: "triangle-list", cullMode: "none" },
             depthStencil: { format: "depth24plus", depthWriteEnabled: true, depthCompare: "less" },
@@ -489,6 +498,27 @@ export class Viewport {
     pass.draw(3);
     pass.end();
   }
+  /**
+   * Colour the mesh by a per-vertex scalar (e.g. von Mises stress), normalised by `scale`.
+   * Null clears it. Stress views always draw the mesh.
+   */
+  setStress(values: Float32Array | null, scale = 1) {
+    if (!this.meshVB || !this.meshVertices) return;
+    const n = this.meshVertices;
+    const col = new Float32Array(n);
+    for (let i = 0; i < n; i++) col[i] = values && i < values.length ? values[i] / scale : -1;
+    if (values) {
+      const bytes = new Float32Array(n * 7);
+      // read-back is not possible on vertex buffers: rebuild from the kept copy
+      bytes.set(this.meshData!);
+      for (let i = 0; i < n; i++) bytes[i * 7 + 6] = col[i];
+      this.device.queue.writeBuffer(this.meshVB, 0, bytes);
+    } else {
+      this.device.queue.writeBuffer(this.meshVB, 0, this.meshData!);
+    }
+    this.stressShown = !!values;
+    this.request();
+  }
   /** Whether the last frame was drawn from the mesh. */
   get usingMesh() {
     return this.meshFrame;
@@ -521,7 +551,7 @@ export class Viewport {
     const moving = this.interacting;
     // mesh when it exists, the view is plain shaded with no section, and the GPU benefits
     this.meshFrame = this.meshIndices > 0 && this.mode === "shaded" && this.section.axis === "off" &&
-      (moving || this.perf.alwaysMesh || this.slowStills >= 2);
+      (moving || this.perf.alwaysMesh || this.slowStills >= 2 || this.stressShown);
     // raster frames are cheap: always full (capped) resolution, so motion stays sharp
     this.resize(this.meshFrame ? 1 : moving ? this.dyn : this.still);
     this.writeUniforms();

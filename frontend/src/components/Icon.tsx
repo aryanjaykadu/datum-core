@@ -80,6 +80,7 @@ const P: Record<string, string> = {
   cut: "M6 6a2.5 2.5 0 1 0 0 .1 M6 18a2.5 2.5 0 1 0 0 .1 M8 7.5L20 18 M8 16.5L20 6",
   new: "M4 8l8-4 8 4v8l-8 4-8-4z M17 2v6 M14 5h6",
   play: "M7 4l13 8-13 8z",
+  strength: "M4 20h16 M7 20V9l5-5 5 5v11 M10 20v-5h4v5 M12 4v3",
 };
 // tools that share a drawing
 const ALIAS: Record<string, string> = { add: "union", intersectOp: "intersect" };

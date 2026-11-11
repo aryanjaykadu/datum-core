@@ -71,6 +71,16 @@ cd src-tauri && cargo test --release                             # .datum encryp
 - The Performance preset (Settings → Viewport) uses the mesh all the time, without shadows, glass blur or animation: suited to integrated graphics.
 - Section, X-ray, normals and manufacturability views always use the exact field.
 
+## Strength study (v1.7)
+
+Datum Core is focused on designing strong, light, print-ready parts (see `ROADMAP.md`). The **Strength** tab runs a linear-elastic finite-element analysis on the part's own voxels:
+
+1. **Where is it held?** Click the part to place fixtures.
+2. **Where is it pushed?** Set a force and direction, click to place loads.
+3. **Run**: the part is coloured by von Mises stress, with a safety factor against the material's yield, peak stress and deflection.
+
+Validated in the kernel tests: a tension bar is exact and a cantilever deflects within 5 % of beam theory. Peak stress is reported as the 99th percentile, since stress exactly at a clamp or point load is a modelling artefact. It is a design guide, not a certification. Fixtures and loads are saved with the design.
+
 ## Interface (v1.6)
 
 - **Start hub**: an empty design opens on six big starting points (template, sketch, shape, import, open, calculator).

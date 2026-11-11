@@ -13,6 +13,7 @@
 #include "dk/robot.hpp"
 #include "dk/meshfield.hpp"
 #include "dk/parts.hpp"
+#include "dk/fea.hpp"
 #include "dk/sketch.hpp"
 #include "dk/shapes.hpp"
 
@@ -784,6 +785,48 @@ TEST(inverse_kinematics_reaches_points_and_stops_at_the_boundary) {
         IkResult far = inverse_kinematics(r, std::vector<double>(r.joints.size(), 0.3), {5 * r.reach(), 0, 0}, 0.5);
         CHECK(!far.reached && far.error_mm > 4 * r.reach() && far.error_mm < 5 * r.reach(), "%s stops near the boundary for an unreachable target (%g)", key, far.error_mm);
     }
+}
+
+TEST(fea_tension_bar_is_exact) {
+    // uniform bar in tension: sigma = F / A everywhere away from the ends, delta = F L / (E A)
+    Graph g;
+    P3 p = coords(g);
+    Program bar = compile(box(translate(p, {50, 0, 0}), {100, 10, 10}));
+    FeaGrid grid = voxelize(bar, {0, -5, -5}, {100, 5, 5}, 1.0);
+    CHECK(grid.solid_count() == 10000, "voxels %zu", grid.solid_count());
+    // clamp the x = 0 face, pull the x = 100 face (spheres far away approximate the planes)
+    FeaResult r = solve_elastic(grid, 200000, 0.0, {{{-1000, 0, 0}, 1000.03}}, {{{1100, 0, 0}, 1000.03, {1000, 0, 0}}});
+    CHECK(r.converged, "converged in %d iterations", r.iterations);
+    double want = 1000.0 * 100 / (200000.0 * 100);  // 0.005 mm
+    double tip = 0;
+    for (int k = 0; k <= 10; ++k)
+        for (int j = 0; j <= 10; ++j) tip += r.displacement[100 + 101 * (j + 11 * k)].x / 121;
+    CHECK(std::abs(tip / want - 1) < 0.02, "tension stretch %g vs %g", tip, want);
+    double mid = r.von_mises[50 + 100 * (5 + 10 * 5)];
+    CHECK(std::abs(mid / 10.0 - 1) < 0.02, "tension stress %g vs 10 MPa", mid);
+}
+
+TEST(fea_cantilever_matches_beam_theory) {
+    Graph g;
+    P3 p = coords(g);
+    Program beam = compile(box(translate(p, {50, 0, 0}), {100, 10, 10}));
+    FeaGrid grid = voxelize(beam, {0, -5, -5}, {100, 5, 5}, 1.0);
+    const double E = 200000, P = 100, L = 100, I = 10.0 * 1000 / 12;
+    FeaResult r = solve_elastic(grid, E, 0.3, {{{-1000, 0, 0}, 1000.03}}, {{{100, 0, 0}, 7.5, {0, 0, -P}}});
+    CHECK(r.converged, "converged in %d iterations", r.iterations);
+    double tip = 0;
+    for (int j = 0; j <= 10; ++j) tip += -r.displacement[100 + 101 * (j + 11 * 5)].z / 11;
+    double want = P * L * L * L / (3 * E * I);  // 0.2 mm (shear adds under 1 %)
+    CHECK(std::abs(tip / want - 1) < 0.15, "cantilever tip %g vs %g mm", tip, want);
+    // bending stress at mid-span, top fibre element (z = 4.5): M c / I
+    double sigma = r.von_mises[50 + 100 * (5 + 10 * 9)], want_s = P * 50 * 4.5 / I;
+    CHECK(std::abs(sigma / want_s - 1) < 0.15, "mid-span stress %g vs %g MPa", sigma, want_s);
+    CHECK(r.max_vm > want_s, "peak stress at the root exceeds mid-span (%g)", r.max_vm);
+    std::printf("  cantilever: %d iterations, %.2fs, tip %.4f mm (theory %.4f)\n", r.iterations, r.seconds, tip, want);
+    // no fixture on the part is reported, not solved
+    bool threw = false;
+    try { solve_elastic(grid, E, 0.3, {{{500, 500, 500}, 1}}, {{{100, 0, 0}, 7.5, {0, 0, -P}}}); } catch (const std::runtime_error&) { threw = true; }
+    CHECK(threw, "missing fixture is an error");
 }
 
 int main() {

@@ -13,8 +13,8 @@ export const MESH_WGSL = /* wgsl */ `
 ${UNIFORMS}
 @group(0) @binding(0) var<uniform> U: Uniforms;
 
-struct VIn { @location(0) pos: vec3f, @location(1) nrm: vec3f };
-struct VOut { @builtin(position) clip: vec4f, @location(0) world: vec3f, @location(1) nrm: vec3f };
+struct VIn { @location(0) pos: vec3f, @location(1) nrm: vec3f, @location(2) stress: f32 };
+struct VOut { @builtin(position) clip: vec4f, @location(0) world: vec3f, @location(1) nrm: vec3f, @location(2) stress: f32 };
 
 @vertex
 fn vs(v: VIn) -> VOut {
@@ -31,6 +31,7 @@ fn vs(v: VIn) -> VOut {
   o.clip = vec4f(x * w, y * w, depth * w, w);
   o.world = v.pos;
   o.nrm = v.nrm;
+  o.stress = v.stress;
   return o;
 }
 
@@ -57,6 +58,17 @@ fn fs(i: VOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
   else if (look == 3u) { base = vec3f(0.78, 0.79, 0.80); metal = 1.0; rough = 0.20; }
   else if (look == 4u) { base = vec3f(0.42, 0.43, 0.45); metal = 0.85; rough = 0.52; }
   else if (look == 5u) { base = vec3f(0.92, 0.91, 0.87); metal = 0.0; rough = 0.72; }
+  // stress view: blue (low) -> green -> yellow -> red (at the scale's maximum); matte, so the colours read
+  if (i.stress >= 0.0) {
+    let t = clamp(i.stress, 0.0, 1.0);
+    let c0 = vec3f(0.12, 0.30, 0.95);
+    let c1 = vec3f(0.10, 0.80, 0.55);
+    let c2 = vec3f(0.98, 0.85, 0.20);
+    let c3 = vec3f(0.95, 0.18, 0.15);
+    base = select(select(mix(c2, c3, (t - 0.66) / 0.34), mix(c1, c2, (t - 0.33) / 0.33), t < 0.66), mix(c0, c1, t / 0.33), t < 0.33);
+    metal = 0.0;
+    rough = 0.65;
+  }
   let f0 = mix(vec3f(0.04), base, metal);
   let nl = max(dot(n, key), 0.0);
   let h = normalize(v + key);
