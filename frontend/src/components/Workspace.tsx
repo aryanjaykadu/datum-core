@@ -618,7 +618,8 @@ export default function Workspace() {
         {rightTab === "strength" && (
           <StrengthPanel doc={doc} result={result} onDocChange={(p) => commit({ ...docRef.current, ...p })}
             setPickHandler={(h) => (strengthPick.current = h)}
-            onStress={(v, scale) => vp.current?.setStress(v, scale)} onLog={(level, msg) => pushLog(level, "strength", msg)} />
+            onStress={(v, scale) => vp.current?.setStress(v, scale)} onLog={(level, msg) => pushLog(level, "strength", msg)}
+            onLighten={(target) => insert("lighten", "add", { target }, true)} />
         )}
         {rightTab === "analysis" && <Inspector result={result} settings={settings} />}
         {rightTab === "quote" && <QuotePanel result={result} catalog={catalog} material={doc.material} />}

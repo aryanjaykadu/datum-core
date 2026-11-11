@@ -8,6 +8,7 @@ import { kernel } from "@/lib/ipc";
 import Icon from "./Icon";
 
 type Placing = null | "fixture" | "load";
+const fmtMass = (kg: number) => (kg >= 1 ? `${kg.toFixed(2)} kg` : `${(kg * 1000).toFixed(1)} g`);
 const DIRECTIONS = [
   { key: "into", label: "Into the surface" },
   { key: "-z", label: "Down (−Z)" },
@@ -19,7 +20,7 @@ const DIRECTIONS = [
  * Strength study, in three steps: where the part is held, where it is pushed, then solve.
  * Results colour the part by stress and give a safety factor against the material's yield.
  */
-export default function StrengthPanel({ doc, result, onDocChange, setPickHandler, onStress, onLog }: {
+export default function StrengthPanel({ doc, result, onDocChange, setPickHandler, onStress, onLog, onLighten }: {
   doc: DatumDocument;
   result: Evaluation | null;
   onDocChange: (patch: Partial<DatumDocument>) => void;
@@ -28,6 +29,8 @@ export default function StrengthPanel({ doc, result, onDocChange, setPickHandler
   /** Per-vertex stress for the viewport (null to clear) and the colour-scale maximum. */
   onStress: (values: Float32Array | null, scaleMpa: number) => void;
   onLog: (level: "info" | "warn" | "error", msg: string) => void;
+  /** Add a stress-graded lattice that removes `target` % of the mass. */
+  onLighten: (target: number) => void;
 }) {
   const study: Study = doc.study ?? { fixtures: [], loads: [] };
   const [placing, setPlacing] = useState<Placing>(null);
@@ -36,6 +39,11 @@ export default function StrengthPanel({ doc, result, onDocChange, setPickHandler
   const [running, setRunning] = useState(false);
   const [res, setRes] = useState<StressResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [target, setTarget] = useState(40);
+  // before/after comparison across the rebuild that adds the lattice
+  const [before, setBefore] = useState<{ mass: number; sf: number; stress: number } | null>(null);
+  const [compare, setCompare] = useState<"waiting" | "ready" | null>(null);
+  const lightened = doc.features.some((f) => f.type === "lighten" && !f.suppressed);
   const size = result ? Math.max(...result.geometry.bbox_max.map((v, i) => v - result.geometry.bbox_min[i])) : 100;
   const radius = Math.max(1.5, size * 0.05);
 
@@ -44,6 +52,11 @@ export default function StrengthPanel({ doc, result, onDocChange, setPickHandler
   useEffect(() => {
     setRes(null);
     onStress(null, 1);
+    // the lattice just rebuilt: check the lighter part straight away
+    if (compare === "waiting" && result) {
+      setCompare("ready");
+      void run();
+    }
   }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -131,6 +144,14 @@ export default function StrengthPanel({ doc, result, onDocChange, setPickHandler
       {error && <div className="note bad pad">{error}</div>}
       {res && verdict && (
         <>
+          {compare === "ready" && before && result && (
+            <div className="compare">
+              <div><small>Before</small><b>{fmtMass(before.mass)}</b><span>safety {before.sf.toFixed(2)}</span></div>
+              <Icon name="chevron" size={20} />
+              <div className="after"><small>After</small><b>{fmtMass(result.contract.telemetry_and_4d.mass_kg)}</b>
+                <span>safety {sf.toFixed(2)} · {Math.round((1 - result.contract.telemetry_and_4d.mass_kg / before.mass) * 100)} % lighter</span></div>
+            </div>
+          )}
           <div className={`verdict ${verdict[0]}`}>
             <div><small>Safety factor</small><b>{sf >= 100 ? "100+" : sf.toFixed(sf < 10 ? 2 : 0)}</b></div>
             <div><b className="v-title">{verdict[1]}</b><span>{verdict[2]}</span></div>
@@ -140,6 +161,23 @@ export default function StrengthPanel({ doc, result, onDocChange, setPickHandler
             <div className="stat"><small>Max deflection</small><b>{res.max_displacement_mm < 0.1 ? res.max_displacement_mm.toFixed(3) : res.max_displacement_mm.toFixed(2)}</b><span>mm</span></div>
           </div>
           <div className="stress-legend"><span>0</span><i /><span>{res.p99_mpa.toFixed(1)} MPa</span></div>
+          {!lightened && (
+            <div className="lighten-card">
+              <header><span className="tool-icon"><Icon name="gyroid_infill" size={22} /></span><div><b>Make it lighter</b>
+                <span>Hollow the part and fill it with a lattice that is dense where it is red, sparse where it is blue.</span></div></header>
+              <div className="target-row">
+                {[20, 30, 40, 50, 60].map((t) => (
+                  <button key={t} aria-pressed={target === t} onClick={() => setTarget(t)}>−{t} %</button>
+                ))}
+              </div>
+              <button className="btn primary wide" disabled={running} onClick={() => {
+                setBefore({ mass: result.contract.telemetry_and_4d.mass_kg, sf: res.safety_factor, stress: res.p99_mpa });
+                setCompare("waiting");
+                click(330, 0.5);
+                onLighten(target);
+              }}><Icon name="sparkle" size={14} />Make it {target} % lighter</button>
+            </div>
+          )}
           <p className="note small pad">
             {res.material} · {res.voxels.toLocaleString()} voxels of {res.voxel_mm.toFixed(2)} mm · solved in {res.seconds.toFixed(1)} s{res.converged ? "" : " (not fully converged)"}.
             Peak is the 99th percentile: stress right at a clamp or load point is a modelling artefact. Linear elastic; a guide, not a certification.

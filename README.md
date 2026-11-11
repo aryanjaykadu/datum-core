@@ -71,6 +71,12 @@ cd src-tauri && cargo test --release                             # .datum encryp
 - The Performance preset (Settings → Viewport) uses the mesh all the time, without shadows, glass blur or animation: suited to integrated graphics.
 - Section, X-ray, normals and manufacturability views always use the exact field.
 
+## Make it lighter (v1.8)
+
+After a strength study, **Make it lighter** (Strength tab, or Lattice → Make it lighter) keeps a solid skin and fills the inside with a gyroid lattice whose walls are **thick where the study shows high stress and thin where the part idles**, scaled automatically to remove the chosen share of the mass (20–60 %). Walls never go below 0.6 mm, so they print with a 0.4 mm nozzle. The part is then re-checked automatically and the panel shows before and after mass and safety factor.
+
+Because lattice walls are thinner than the analysis voxels, the re-check models the lattice zone as an equivalent material (stiffness ∝ density^1.5) and converts its stress back to wall stress (÷ density): the standard homogenisation approach. Tested: a loaded bar comes out 40 % ± 5 % lighter with a denser lattice near its clamped root; without a study the lattice is uniform and says so.
+
 ## Strength study (v1.7)
 
 Datum Core is focused on designing strong, light, print-ready parts (see `ROADMAP.md`). The **Strength** tab runs a linear-elastic finite-element analysis on the part's own voxels:

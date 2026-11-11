@@ -27,8 +27,8 @@ of the way of this path.
 
 | Version | Goal | Status |
 |---|---|---|
-| 1.7 | Stress study: voxel FEA, click to place fixtures and loads, stress colours, safety factor | in progress |
-| 1.8 | "Make it lighter": stress-graded lattice to a target weight, before/after mass and strength | next |
+| 1.7 | Stress study: voxel FEA, click to place fixtures and loads, stress colours, safety factor | done |
+| 1.8 | "Make it lighter": stress-graded lattice to a target weight, before/after mass and strength | done |
 | 1.9 | App organised around the workflow: guided steps, print-first start hub, printer profiles in Send to slicer | next |
 | 2.0 | Real users: 10 printer owners try it; fix what they trip over; website and signed installer | later |
 

@@ -698,7 +698,7 @@ dependencies = [
 
 [[package]]
 name = "datum-core-enterprise"
-version = "1.7.0"
+version = "1.8.0"
 dependencies = [
  "aes-gcm",
  "rand",

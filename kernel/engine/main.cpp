@@ -53,7 +53,8 @@ struct Session {
     Vec3 lo, hi;
     std::string material = "al6061t6";
     json doc;  // the evaluated document (for feature picking)
-    FeaGrid fea_grid;   // last stress study (for stress-graded lattices)
+    FeaGrid fea_grid;   // last stress study
+    std::vector<BuildResult::Lightened> lightened;  // lattice zones (modelled as equivalent material)
     FeaResult fea;
     Accessibility access;
     bool ready = false;
@@ -183,6 +184,7 @@ json evaluate(Session& s, const json& params) {
     auto graph = std::make_unique<Graph>();
     BuildResult built = build_document(*graph, doc);
     s.doc = doc;
+    s.lightened = built.lightened;
     Program f = compile(built.root);
     double t_build = ms();
 
@@ -347,9 +349,32 @@ int main() {
                 double target = std::clamp(params.value("voxels", 40000.0), 2000.0, 400000.0);
                 double h = voxel_size_for(session.lo, session.hi, target);
                 Vec3 pad{h, h, h};
-                session.fea_grid = voxelize(session.program, session.lo - pad, session.hi + pad, h);
                 const Material& m = material(session.material);
-                session.fea = solve_elastic(session.fea_grid, m.youngs_gpa * 1000.0, 0.33, fixtures, loads);
+                bool homogenised = !session.lightened.empty();
+                if (!homogenised) {
+                    session.fea_grid = voxelize(session.program, session.lo - pad, session.hi + pad, h);
+                    session.fea = solve_elastic(session.fea_grid, m.youngs_gpa * 1000.0, 0.33, fixtures, loads);
+                } else {
+                    // walls thinner than a voxel: solve on the solid before lightening, with the lattice zone as an
+                    // equivalent material (stiffness rho^1.5) and its stress raised to wall stress (/ rho)
+                    const auto& L = session.lightened.back();
+                    Program body = compile(L.body);
+                    session.fea_grid = voxelize(body, session.lo - pad, session.hi + pad, h);
+                    const FeaGrid& gr = session.fea_grid;
+                    std::vector<float> stiff(gr.solid.size(), 1.f), amp(gr.solid.size(), 1.f);
+                    for (int k = 0; k < gr.nz; ++k)
+                        for (int j = 0; j < gr.ny; ++j)
+                            for (int i = 0; i < gr.nx; ++i) {
+                                size_t v = size_t(i) + size_t(gr.nx) * (j + size_t(gr.ny) * k);
+                                if (!gr.solid[v]) continue;
+                                Vec3 c{gr.lo.x + (i + 0.5) * h, gr.lo.y + (j + 0.5) * h, gr.lo.z + (k + 0.5) * h};
+                                if (body(c) > -L.skin) continue;  // solid skin
+                                double rho = gyroid_density(grid_eval(L.grid_id, c.x, c.y, c.z), L.cell);
+                                stiff[v] = float(gyroid_stiffness(rho));
+                                amp[v] = float(1.0 / rho);
+                            }
+                    session.fea = solve_elastic(session.fea_grid, m.youngs_gpa * 1000.0, 0.33, fixtures, loads, 6000, 1e-6, &stiff, &amp);
+                }
                 std::string bin;
                 bin.reserve(session.mesh.vertices.size() * 4);
                 for (auto& v : session.mesh.vertices) {
@@ -366,7 +391,7 @@ int main() {
                     {"yield_mpa", m.yield_mpa}, {"safety_factor", m.yield_mpa / std::max(p99, 1e-9)},
                     {"iterations", session.fea.iterations}, {"converged", session.fea.converged}, {"seconds", session.fea.seconds},
                     {"voxel_mm", h}, {"voxels", session.fea_grid.solid_count()},
-                    {"fixed_nodes", session.fea.fixed_nodes}, {"loaded_nodes", session.fea.loaded_nodes}, {"material", m.name}}}}, &bin);
+                    {"fixed_nodes", session.fea.fixed_nodes}, {"loaded_nodes", session.fea.loaded_nodes}, {"material", m.name}, {"homogenised", homogenised}}}}, &bin);
             } else if (method == "feature_at") {
                 if (!session.ready) throw std::runtime_error("evaluate a document first");
                 json pt = params.at("point");

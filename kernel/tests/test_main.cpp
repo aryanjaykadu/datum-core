@@ -829,6 +829,44 @@ TEST(fea_cantilever_matches_beam_theory) {
     CHECK(threw, "missing fixture is an error");
 }
 
+TEST(lighten_meets_the_target_and_follows_the_stress) {
+    // a 100 x 24 x 24 bar held at x = 0 and loaded at the tip: stress falls along the bar
+    json doc = {{"version", 1}, {"root", "light"}, {"material", "al6061t6"},
+                {"study", {{"fixtures", json::array({{{"center", {-1000, 0, 0}}, {"radius", 1002.0}}})},
+                           {"loads", json::array({{{"center", {100, 0, 12}}, {"radius", 6}, {"force", {0, 0, -500}}}})}}},
+                {"features", json::array({
+                    {{"id", "bar"}, {"type", "box"}, {"params", {{"size", {100, 24, 24}}, {"center", {50, 0, 0}}}}},
+                    {{"id", "light"}, {"type", "lighten"}, {"inputs", {"bar"}}, {"params", {{"target", 40}, {"skin", 1.6}, {"cell", 8}}}},
+                })}};
+    Graph g;
+    BuildResult b = build_document(g, doc);
+    Program f = compile(b.root);
+    CHECK(!b.warnings.empty() && b.warnings[0].find("thicker where") != std::string::npos, "lighten reports a graded result");
+    Mesh m = dual_contour(f, {{-1.03, -13.07, -13.05}, {101.1, 13.1, 13.1}, 0.25});
+    double v = mass_properties(m).volume_mm3, v0 = 100.0 * 24 * 24;
+    CHECK(std::abs((1 - v / v0) - 0.40) < 0.05, "removed %.1f %% (target 40 %%)", 100 * (1 - v / v0));
+    CHECK(topology(m).boundary_edges == 0, "lightened mesh has no open edges");
+    // more material near the clamped root than near the tip
+    auto fill = [&](double x0, double x1) {
+        int in = 0, n = 0;
+        for (double x = x0; x < x1; x += 0.5)
+            for (double y = -9; y <= 9; y += 0.75)
+                for (double z = -9; z <= 9; z += 0.75) ++n, in += f({x, y, z}) < 0;
+        return double(in) / n;
+    };
+    double root = fill(8, 28), tip = fill(72, 92);
+    CHECK(root > tip * 1.25, "core fill near the root %.2f vs tip %.2f", root, tip);
+    CHECK(worst_lipschitz(f, {-2, -14, -14}, {102, 14, 14}, 33) <= 1.0 + 1e-6, "lightened field stays a distance bound");
+    // without a study: uniform lattice, still on target
+    json plain = doc;
+    plain.erase("study");
+    Graph g2;
+    BuildResult b2 = build_document(g2, plain);
+    double v2 = mass_properties(dual_contour(compile(b2.root), {{-1.03, -13.07, -13.05}, {101.1, 13.1, 13.1}, 0.25})).volume_mm3;
+    CHECK(std::abs((1 - v2 / v0) - 0.40) < 0.05, "uniform removed %.1f %%", 100 * (1 - v2 / v0));
+    CHECK(b2.warnings[0].find("uniform") != std::string::npos, "uniform result says so");
+}
+
 int main() {
     for (auto& t : registry()) {
         int before = failures;

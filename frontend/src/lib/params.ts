@@ -127,8 +127,7 @@ export function resolveDocument(doc: DatumDocument): { doc: DatumDocument; error
   const features: Feature[] = doc.features.map((f) => f.params
     ? { ...f, params: Object.fromEntries(Object.entries(f.params).map(([k, v]) => [k, fix(v, `${f.name ?? f.id}.${k}`)])) }
     : f);
-  const { parameters: _drop, study: _study, ...rest } = doc;
+  const { parameters: _drop, ...rest } = doc;
   void _drop;
-  void _study;
   return { doc: { ...rest, features }, errors };
 }

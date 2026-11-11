@@ -1,17 +1,18 @@
-#include "dk/parts.hpp"
-#include "dk/document.hpp"
-
-#include "dk/robot.hpp"
-#include "dk/meshfield.hpp"
-#include "dk/sketch.hpp"
-
+#include <cstring>
 #include <filesystem>
-
 #include <functional>
 #include <numbers>
 #include <set>
 #include <stdexcept>
 #include <tuple>
+
+#include "dk/document.hpp"
+#include "dk/analysis.hpp"
+#include "dk/fea.hpp"
+#include "dk/meshfield.hpp"
+#include "dk/parts.hpp"
+#include "dk/robot.hpp"
+#include "dk/sketch.hpp"
 
 namespace dk {
 namespace {
@@ -23,6 +24,7 @@ struct Builder {
     std::map<std::tuple<std::string, uint32_t, uint32_t, uint32_t>, Expr> cache;
     std::set<std::string> visiting, evaluated;
     std::vector<std::pair<Expr, double>> lattice_regions;
+    std::vector<BuildResult::Lightened> lightened;
     std::vector<std::string> warnings;
 
     [[noreturn]] static void fail(const std::string& id, const std::string& msg) {
@@ -347,6 +349,71 @@ struct Builder {
             }
             return robot_geometry(p, robot, q, base);
         }
+        if (type == "lighten") {
+            Expr body = single_input(f, id, p);
+            LightenOptions opt;
+            opt.target = num(params, "target", 40) / 100.0;
+            opt.cell = num(params, "cell", 0);
+            opt.skin = positive(params, "skin", 1.6, id);
+            opt.min_wall = positive(params, "min_wall", 0.6, id);
+            LightenStudy study;
+            if (doc && doc->contains("study")) {
+                const json& st = (*doc)["study"];
+                auto read = [&](const char* key, bool force, std::vector<FeaSphere>& out) {
+                    for (auto& s : st.value(key, json::array())) {
+                        json c = s.at("center");
+                        FeaSphere sp{{c[0].get<double>(), c[1].get<double>(), c[2].get<double>()}, s.at("radius").get<double>()};
+                        if (force) {
+                            json F = s.at("force");
+                            sp.force = {F[0].get<double>(), F[1].get<double>(), F[2].get<double>()};
+                        }
+                        out.push_back(sp);
+                    }
+                };
+                read("fixtures", false, study.fixtures);
+                read("loads", true, study.loads);
+            }
+            study.youngs_mpa = material(doc ? doc->value("material", std::string("al6061t6")) : std::string("al6061t6")).youngs_gpa * 1000;
+            // the stress solve and the search take seconds: cache by the input's program and the settings
+            Program prog = compile(body);
+            uint64_t hsh = 1469598103934665603ull;
+            auto mix = [&](uint64_t v) { hsh = (hsh ^ v) * 1099511628211ull; };
+            for (auto& in : prog.code) {
+                mix(uint64_t(in.op)); mix(in.a); mix(in.b); mix(in.d);
+                double c = in.c;
+                uint64_t bits;
+                std::memcpy(&bits, &c, 8);
+                mix(bits);
+            }
+            std::string key = std::to_string(hsh) + "|" + params.dump() + "|" + (doc && doc->contains("study") ? (*doc)["study"].dump() : "") + "|" + std::to_string(study.youngs_mpa);
+            static std::map<std::string, std::tuple<int, double, double, double, double, bool>> cache;  // grid, removed, wall min/max, cell, graded
+            LightenResult r;
+            auto it = cache.find(key);
+            try {
+                if (it == cache.end()) {
+                    r = lighten(p, body, study, opt);
+                    cache[key] = {r.grid_id, r.removed, r.wall_min, r.wall_max, r.cell, r.graded};
+                } else {
+                    // rebuild the expression around the cached thickness grid (cheap)
+                    auto [gid, removed, wmin, wmax, cellc, graded] = it->second;
+                    const double kk = 2 * std::numbers::pi / cellc, gscale = 1.0 / (std::numbers::sqrt2 * kk);
+                    Expr x = p.x * kk, y = p.y * kk, z = p.z * kk;
+                    Expr g = sin(x) * cos(y) + sin(y) * cos(z) + sin(z) * cos(x);
+                    Expr sheet = (abs(g) * gscale - sample_grid(gid, p.x, p.y, p.z) * 0.5) * (1.0 / 1.6);
+                    r.shape = unite(shell_inward(body, opt.skin), intersect(sheet, offset(body, -opt.skin)));
+                    r.removed = removed, r.wall_min = wmin, r.wall_max = wmax, r.cell = cellc, r.graded = graded, r.grid_id = gid;
+                }
+            } catch (const std::runtime_error& e) {
+                fail(id, e.what());
+            }
+            lattice_regions.emplace_back(body, opt.skin);
+            lightened.push_back({body, r.grid_id, r.cell, opt.skin});
+            char note[200];
+            std::snprintf(note, sizeof note, "%s: %.0f %% lighter, %.1f mm cells, walls %.1f-%.1f mm%s", f.value("name", id).c_str(), r.removed * 100,
+                          r.cell, r.wall_min, r.wall_max, r.graded ? ", thicker where the stress study is high" : " (uniform: add a strength study to grade it)");
+            warnings.push_back(note);
+            return r.shape;
+        }
         if (type == "gyroid_infill") {
             Expr body = single_input(f, id, p);
             double cell = positive(params, "cell", 10, id), wall = positive(params, "wall", 1, id), skin = positive(params, "skin", 1.2, id);
@@ -364,7 +431,7 @@ BuildResult build_document(Graph& g, const json& doc) {
     if (!doc.is_object()) throw std::runtime_error("document must be a JSON object");
     if (doc.value("version", 1) != 1) throw std::runtime_error("unsupported document version");
     const json& features = doc.at("features");
-    Builder b{g, &doc, {}, {}, {}, {}, {}, {}};
+    Builder b{g, &doc, {}, {}, {}, {}, {}, {}, {}};
     BuildResult out;
     for (auto& f : features) {
         std::string id = f.value("id", std::string());
@@ -379,6 +446,7 @@ BuildResult build_document(Graph& g, const json& doc) {
     out.root = b.build(root, coords(g));
     out.dag_nodes = b.evaluated.size();
     out.designed_void_regions = b.lattice_regions;
+    out.lightened = b.lightened;
     out.warnings = b.warnings;
     for (auto& f : out.features)
         if (!f.suppressed && !b.evaluated.count(f.id)) out.warnings.push_back("feature '" + f.name + "' is not used by the result");
@@ -399,7 +467,7 @@ std::string feature_at(const json& doc, Vec3 p, double tol) {
         for (auto& i : inputs[id]) d += 1 + up(i);
         return depth[id] = d;
     };
-    Builder b{g, &doc, {}, {}, {}, {}, {}, {}};
+    Builder b{g, &doc, {}, {}, {}, {}, {}, {}, {}};
     for (auto& f : doc.at("features")) b.by_id.emplace(f.value("id", std::string()), &f);
     b.build(doc.value("root", built.features.back().id), coords(g));
     std::string best;
@@ -517,6 +585,9 @@ json feature_catalog() {
                        {"params", {{"preset", choice("Model", {"ur5", "puma560", "planar3r"})}, {"center", vec3("Base position", {0, 0, 0})},
                                    {"joints_a", vec3("Joints 1-3 (deg)", {0, -90, 0})}, {"joints_b", vec3("Joints 4-6 (deg)", {-90, 0, 0})},
                                    {"link_radius", number("Link radius", 42, 1)}}}}},
+        {"lighten", {{"label", "Make it lighter"}, {"group", "Lattice"}, {"inputs", 1},
+                     {"params", {{"target", number("Lighter by", 40, 5, "%")}, {"skin", number("Solid skin", 1.6, 0.4)},
+                                 {"cell", number("Cell size (0 = auto)", 0, 0)}, {"min_wall", number("Thinnest wall", 0.6, 0.3)}}}}},
         {"gyroid_infill", {{"label", "Gyroid infill"}, {"group", "Lattice"}, {"inputs", 1},
                            {"params", {{"cell", number("Cell size", 10, 0.1)}, {"wall", number("Wall", 0.8, 0.05)}, {"skin", number("Skin", 1.2, 0.05)}}}}},
     };

@@ -36,6 +36,10 @@ struct BuildResult {
     // Regions where voids are intended (the core of each lattice infill): body field + skin.
     // Cavities found inside them are designed, not hidden defects.
     std::vector<std::pair<Expr, double>> designed_void_regions;
+    // Lightened bodies: the solid before lightening, its wall-thickness grid, cell and skin.
+    // The stress study models these as an equivalent material.
+    struct Lightened { Expr body; int grid_id; double cell, skin; };
+    std::vector<Lightened> lightened;
 };
 
 // Throws std::runtime_error with a user-readable message on invalid documents
