@@ -71,6 +71,15 @@ cd src-tauri && cargo test --release                             # .datum encryp
 - The Performance preset (Settings → Viewport) uses the mesh all the time, without shadows, glass blur or animation: suited to integrated graphics.
 - Section, X-ray, normals and manufacturability views always use the exact field.
 
+## Interface (v1.6)
+
+- **Start hub**: an empty design opens on six big starting points (template, sketch, shape, import, open, calculator).
+- **Tool rail**: discipline categories as icons down the left; each opens a card grid with an icon and one-line description per tool, plus Add / Cut / Keep overlap / New body. The search icon finds any tool by name.
+- **View pill**: fit, views, display mode, section and measure in a floating pill with descriptive pop-ups.
+- **Title bar**: search (Ctrl+K), undo/redo, quick theme switcher, settings, discipline and Simple/Pro.
+- **Analysis tiles** for mass, volume, size and mesh state; the bottom dock (graph, history, log) opens from the status bar.
+- **Themes**: eight presets plus a fully custom theme (background, panels, text and two accents).
+
 ## Live liquid glass (v1.5)
 
 Panels floating over the 3D view (title bar, ribbon, tree, inspector, dock, toolbar, status bar) are drawn by the viewport as liquid glass: they refract, frost and tint the live scene behind them as it moves. The refraction model is adapted from [liquid-glass-js](https://github.com/dashersw/liquid-glass-js) (MIT, see `THIRD_PARTY_NOTICES.md`) and runs as one GPU pass, so it costs well under a millisecond. Toggle it in Settings → Appearance; it is off on the Performance preset.

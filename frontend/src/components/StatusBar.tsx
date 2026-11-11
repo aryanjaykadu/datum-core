@@ -3,8 +3,9 @@
 import type { PickResult } from "@/lib/gpu";
 import type { Evaluation } from "@/lib/ipc";
 import { fmtLen, type Settings } from "@/lib/settings";
+import Icon from "./Icon";
 
-export default function StatusBar({ hover, result, settings, busy, error, path, locked }: {
+export default function StatusBar({ hover, result, settings, busy, error, path, locked, dock, onDock }: {
   hover: PickResult | null;
   result: Evaluation | null;
   settings: Settings;
@@ -12,6 +13,8 @@ export default function StatusBar({ hover, result, settings, busy, error, path, 
   error: string | null;
   path: string | null;
   locked: boolean;
+  dock: "graph" | "history" | "log" | null;
+  onDock: (d: "graph" | "history" | "log" | null) => void;
 }) {
   return (
     <footer className="statusbar area-status glass-strong mono">
@@ -20,6 +23,13 @@ export default function StatusBar({ hover, result, settings, busy, error, path, 
       <span className="ellipsis" title={path ?? ""}>{path ?? "Not saved"}</span>
       {locked && <span className="ok">🔒 device-locked</span>}
       <span className="spacer" />
+      <span className="dock-toggles" role="group" aria-label="Bottom panel">
+        {([["graph", "graph", "Graph"], ["history", "history", "History"], ["log", "log", "Log"]] as const).map(([d, icon, label]) => (
+          <button key={d} aria-pressed={dock === d} title={`${dock === d ? "Hide" : "Show"} ${label.toLowerCase()}`} onClick={() => onDock(d)}>
+            <Icon name={icon} size={13} />{label}
+          </button>
+        ))}
+      </span>
       {hover && <span>X {fmtLen(hover.position[0], settings, false)}  Y {fmtLen(hover.position[1], settings, false)}  Z {fmtLen(hover.position[2], settings, false)}</span>}
       {hover?.probe && !hover.cap && <span title="Wall thickness under the cursor, probed along the surface normal">{wallText(hover.probe, settings)}</span>}
       {result && <span>{result.geometry.triangles.toLocaleString()} tris</span>}

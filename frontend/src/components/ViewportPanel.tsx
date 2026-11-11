@@ -6,10 +6,11 @@ import { Viewport, type DisplayMode, type PickResult, type Section, type ViewNam
 import type { Vec3 } from "@/lib/ipc";
 import { fmtLen, type Settings } from "@/lib/settings";
 import ViewCube from "./ViewCube";
+import Icon from "./Icon";
 import type { GlassRect } from "@/lib/gpu";
 
 /** Panels that float over the 3D view and are drawn as liquid glass by the viewport. */
-const GLASS_SELECTOR = ".area-title, .area-ribbon, .area-tree, .area-inspector, .area-dock, .area-status, .vp-toolbar, .section-slider, .dfm-legend, .measure-readout";
+const GLASS_SELECTOR = ".area-title, .area-rail, .area-tree, .area-inspector, .area-dock, .area-status, .vp-toolbar, .section-slider, .dfm-legend, .measure-readout";
 function glassRects(canvas: HTMLCanvasElement): GlassRect[] {
   const c = canvas.getBoundingClientRect();
   const out: GlassRect[] = [];
@@ -31,7 +32,7 @@ const VIEW_BUTTONS: [ViewName, string, string][] = [
   ["right", "Right", "4"], ["top", "Top", "5"], ["bottom", "Bottom", "6"],
 ];
 
-export default function ViewportPanel({ insets, onReady, markers, settings, onSettings, onHover, onError, empty, busy, onPickPoint }: {
+export default function ViewportPanel({ insets, onReady, markers, settings, onSettings, onHover, onError, empty, busy, onPickPoint, onStart }: {
   insets: { left: number; right: number; top: number; bottom: number };
   onReady: (v: Viewport) => void;
   markers: Marker[];
@@ -43,6 +44,8 @@ export default function ViewportPanel({ insets, onReady, markers, settings, onSe
   busy: boolean;
   /** A plain click on the part (not measuring): the surface point. */
   onPickPoint?: (p: PickResult) => void;
+  /** Start hub choices on an empty document. */
+  onStart?: (what: "templates" | "sketch" | "shapes" | "import" | "open" | "calc") => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const vpRef = useRef<Viewport | null>(null);
@@ -50,6 +53,7 @@ export default function ViewportPanel({ insets, onReady, markers, settings, onSe
   const [mode, setMode] = useState<DisplayMode>("shaded");
   const [section, setSection] = useState<Section>({ axis: "off", offset: 0, flip: false });
   const [measure, setMeasure] = useState(false);
+  const [pop, setPop] = useState<null | "views" | "display" | "section">(null);
   const [points, setPoints] = useState<Vec3[]>([]);
   const [triad, setTriad] = useState<{ x: number[]; y: number[]; z: number[] }>({ x: [1, 0], y: [0, 1], z: [0, -1] });
   const [ms, setMs] = useState<number | null>(null);
@@ -207,6 +211,12 @@ export default function ViewportPanel({ insets, onReady, markers, settings, onSe
       ro.disconnect();
     };
   }, [onHover]);
+  useEffect(() => {
+    if (!pop) return;
+    const away = (e: PointerEvent) => !(e.target as HTMLElement).closest?.(".pop-host") && setPop(null);
+    window.addEventListener("pointerdown", away);
+    return () => window.removeEventListener("pointerdown", away);
+  }, [pop]);
   const pickRef = useRef(onPickPoint);
   pickRef.current = onPickPoint;
   const measureRef = useRef(measure);
@@ -256,34 +266,49 @@ export default function ViewportPanel({ insets, onReady, markers, settings, onSe
         ))}
       </div>
 
-      <div className="vp-toolbar glass-strong">
-        {VIEW_BUTTONS.map(([name, label, k]) => (
-          <button key={name} title={`${label} view (${k})`} onClick={() => { click(196, 0.3); vpRef.current?.setView(name); }}>{label}</button>
-        ))}
+      <div className="vp-toolbar vp-pill glass-strong" role="toolbar" aria-label="View">
+        <button className="pill-btn" title="Fit to part (F)" onClick={() => vpRef.current?.fit()}><Icon name="fit" /><small>Fit</small></button>
+        <div className="pop-host">
+          <button className={`pill-btn${pop === "views" ? " on" : ""}`} title="Standard views (0-6)" onClick={() => setPop(pop === "views" ? null : "views")}><Icon name="views" /><small>Views</small></button>
+          {pop === "views" && (
+            <div className="pop glass-strong">
+              {VIEW_BUTTONS.map(([name, label, k]) => (
+                <button key={name} onClick={() => { click(196, 0.3); vpRef.current?.setView(name); setPop(null); }}>{label}<kbd>{k}</kbd></button>
+              ))}
+              <hr />
+              <button aria-pressed={settings.orthographic} onClick={() => onSettings({ orthographic: !settings.orthographic })}>Orthographic<kbd>{settings.orthographic ? "on" : "off"}</kbd></button>
+              <button aria-pressed={settings.grid} onClick={() => onSettings({ grid: !settings.grid })}>Floor grid<kbd>{settings.grid ? "on" : "off"}</kbd></button>
+            </div>
+          )}
+        </div>
         <span className="sep" />
-        <button title="Fit to part (F)" onClick={() => vpRef.current?.fit()}>Fit</button>
-        <button aria-pressed={settings.orthographic} title="Orthographic projection" onClick={() => onSettings({ orthographic: !settings.orthographic })}>Ortho</button>
-        <button aria-pressed={settings.grid} onClick={() => onSettings({ grid: !settings.grid })}>Grid</button>
-        <span className="sep" />
-        <select value={mode} onChange={(e) => setMode(e.target.value as DisplayMode)} title="Display mode">
-          <option value="shaded">Shaded</option>
-          <option value="xray">X-ray</option>
-          <option value="normals">Normals</option>
-          <option value="dfm">Manufacturability</option>
-          <option value="cost">GPU cost</option>
-        </select>
-        <select value={section.axis} onChange={(e) => {
-          const axis = e.target.value as Section["axis"];
-          const i = { off: 0, x: 0, y: 1, z: 2 }[axis];
-          setSection({ axis, flip: section.flip, offset: bounds ? (bounds.lo[i] + bounds.hi[i]) / 2 : 0 });
-        }} title="Section plane">
-          <option value="off">No section</option>
-          <option value="x">Section X</option>
-          <option value="y">Section Y</option>
-          <option value="z">Section Z</option>
-        </select>
-        <span className="sep" />
-        <button aria-pressed={measure} title="Measure distance (M)" onClick={toggleMeasure}>Measure</button>
+        <div className="pop-host">
+          <button className={`pill-btn${pop === "display" || mode !== "shaded" ? " on" : ""}`} title="Display mode" onClick={() => setPop(pop === "display" ? null : "display")}>
+            <Icon name="display" /><small>{{ shaded: "Shaded", xray: "X-ray", normals: "Normals", dfm: "Print check", cost: "GPU cost" }[mode]}</small>
+          </button>
+          {pop === "display" && (
+            <div className="pop glass-strong">
+              {([["shaded", "Shaded", "Realistic material"], ["xray", "X-ray", "See inside"], ["dfm", "Print check", "Thin walls and overhangs"], ["normals", "Normals", "Surface directions"], ["cost", "GPU cost", "Where rendering is expensive"]] as const).map(([m, label, hint]) => (
+                <button key={m} aria-pressed={mode === m} onClick={() => { setMode(m as DisplayMode); setPop(null); }}>{label}<em>{hint}</em></button>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="pop-host">
+          <button className={`pill-btn${section.axis !== "off" ? " on" : ""}`} title="Cut the part open" onClick={() => setPop(pop === "section" ? null : "section")}><Icon name="section" /><small>Section</small></button>
+          {pop === "section" && (
+            <div className="pop glass-strong">
+              {(["off", "x", "y", "z"] as const).map((axis) => (
+                <button key={axis} aria-pressed={section.axis === axis} onClick={() => {
+                  const i = { off: 0, x: 0, y: 1, z: 2 }[axis];
+                  setSection({ axis, flip: section.flip, offset: bounds ? (bounds.lo[i] + bounds.hi[i]) / 2 : 0 });
+                  setPop(null);
+                }}>{axis === "off" ? "No section" : `Cut across ${axis.toUpperCase()}`}</button>
+              ))}
+            </div>
+          )}
+        </div>
+        <button className={`pill-btn${measure ? " on" : ""}`} title="Measure distance (M)" onClick={toggleMeasure}><Icon name="measure" /><small>Measure</small></button>
       </div>
 
       {section.axis !== "off" && (
@@ -331,11 +356,25 @@ export default function ViewportPanel({ insets, onReady, markers, settings, onSe
 
       {ms !== null && <div className="fps mono" title="Time to draw the last frame">{ms.toFixed(1)} ms{ms > 0.5 && ms < 100 ? ` · ${Math.min(999, Math.round(1000 / ms))} fps` : ""}</div>}
       {busy && <div className="busy">Rebuilding…</div>}
-      {empty && (
-        <div className="empty">
-          <div>
-            <b>No geometry yet</b>
-            Insert a primitive, open a .datum file, or start from File → New from example.
+      {empty && onStart && (
+        <div className="start-hub">
+          <h1>What are you making today?</h1>
+          <p>Pick a starting point. Everything stays editable.</p>
+          <div className="start-grid">
+            {([
+              ["template", "Start from a template", "Gears, wings, wheels, robots and more", "templates"],
+              ["sketch", "Sketch a part", "Draw an outline, pull it into 3D", "sketch"],
+              ["box", "Add a shape", "Boxes, cylinders and standard parts", "shapes"],
+              ["import_mesh", "Import CAD", "STEP, STL or OBJ from other software", "import"],
+              ["folder", "Open a design", "Continue a .datum file", "open"],
+              ["calculator", "Quick calculation", "Bolt torque, gears, beams, wings", "calc"],
+            ] as const).map(([icon, title, hint, what]) => (
+              <button key={what} className="start-card" onClick={() => onStart(what)}>
+                <span className="tool-icon"><Icon name={icon} size={28} /></span>
+                <b>{title}</b>
+                <span>{hint}</span>
+              </button>
+            ))}
           </div>
         </div>
       )}

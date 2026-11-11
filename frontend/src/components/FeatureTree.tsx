@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import type { Catalog, DatumDocument } from "@/lib/ipc";
+import Icon from "./Icon";
 
-const GLYPH: Record<string, string> = { Primitive: "◼", Boolean: "◑", Modify: "◇", Pattern: "⁂", Lattice: "⌗" };
 
 export default function FeatureTree({ doc, catalog, selected, onSelect, onRename, onToggle, onDelete, warnings }: {
   doc: DatumDocument;
@@ -27,7 +27,7 @@ export default function FeatureTree({ doc, catalog, selected, onSelect, onRename
         Feature tree
         <span className="muted mono">{doc.features.length}</span>
       </div>
-      {doc.features.length === 0 && <div className="note pad">Insert a primitive from the toolbar, or open the example from File.</div>}
+      {doc.features.length === 0 && <div className="note pad">Your features appear here as you add them, top to bottom.</div>}
       <div className="tree-group">{doc.name ?? "Part"} · {catalog?.materials.find((m) => m.key === doc.material)?.name ?? doc.material}</div>
       {doc.features.map((f) => {
         const spec = catalog?.features[f.type];
@@ -41,7 +41,7 @@ export default function FeatureTree({ doc, catalog, selected, onSelect, onRename
             onDoubleClick={() => setEditing(f.id)}
             title={`${spec?.label ?? f.type} · ${f.id}${f.inputs?.length ? " ← " + f.inputs.join(", ") : ""}`}
           >
-            <span className="glyph">{GLYPH[spec?.group ?? ""] ?? "•"}</span>
+            <span className="glyph"><Icon name={f.type} size={15} /></span>
             {editing === f.id ? (
               <input
                 autoFocus

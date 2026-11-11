@@ -77,6 +77,20 @@ export default function SettingsDialog({ settings, onChange, onClose }: { settin
               </button>
             ))}
           </div>
+          <button className="theme-swatch custom-swatch" aria-pressed={settings.theme === "custom"} onClick={() => onChange({ theme: "custom", accent: "" })}>
+            <span className="chips3"><i style={{ background: settings.custom.canvas }} /><i style={{ background: settings.custom.panel }} /><i style={{ background: settings.custom.accent }} /><i style={{ background: settings.custom.accent2 }} /></span>
+            Custom theme: your own colours
+          </button>
+          {settings.theme === "custom" && (
+            <div className="colour-grid">
+              {([["canvas", "Background"], ["panel", "Panels"], ["text", "Text"], ["accent", "Accent"], ["accent2", "Second accent"]] as const).map(([k, label]) => (
+                <label key={k} className="colour-pick">
+                  <input type="color" value={settings.custom[k]} onChange={(e) => onChange({ custom: { ...settings.custom, [k]: e.target.value } })} />
+                  <span>{label}<small className="mono">{settings.custom[k]}</small></span>
+                </label>
+              ))}
+            </div>
+          )}
           {row("Liquid glass", "Panels refract the live 3D view behind them. Off on the Performance preset.",
             <input type="checkbox" checked={settings.liquidGlass} onChange={(e) => onChange({ liquidGlass: e.target.checked })} />)}
           {row("Custom accent", "Overrides the theme's highlight colour.",

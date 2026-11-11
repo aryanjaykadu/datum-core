@@ -3,6 +3,7 @@
 import type { Evaluation } from "@/lib/ipc";
 import { fmtLen, type Settings } from "@/lib/settings";
 
+const fmtMass = (kg: number) => (kg >= 1 ? `${kg.toFixed(2)} kg` : `${(kg * 1000).toFixed(kg < 0.01 ? 2 : 1)} g`);
 const sci = (v: number) => (Math.abs(v) < 1e-15 ? "0" : Math.abs(v) < 1e-3 || Math.abs(v) >= 1e4 ? v.toExponential(3) : v.toPrecision(4));
 
 function Flag({ label, bad, text }: { label: string; bad: boolean; text: [string, string] }) {
@@ -23,6 +24,12 @@ export default function Inspector({ result, settings }: { result: Evaluation | n
   const vol = settings.units === "in" ? g.volume_mm3 / 16387.064 : g.volume_mm3 / 1000;
   return (
     <>
+      <div className="stat-tiles">
+        <div className="stat"><small>Mass</small><b>{fmtMass(c.telemetry_and_4d.mass_kg)}</b><span>{result.material.name}</span></div>
+        <div className="stat"><small>Volume</small><b>{vol.toFixed(vol < 10 ? 2 : 1)}</b><span>{settings.units === "in" ? "in³" : "cm³"}</span></div>
+        <div className="stat size"><small>Size</small><b>{size.map((v) => Math.round(settings.units === "in" ? v / 25.4 : v)).join(" × ")}</b><span>{settings.units}</span></div>
+        <div className={`stat ${g.watertight ? "good" : "bad"}`}><small>Mesh</small><b>{g.watertight ? "Solid" : "Leaky"}</b><span>{g.watertight ? "watertight, ready to print" : "has gaps"}</span></div>
+      </div>
       <div className="section mono">
         <h3>Mass properties · {result.material.name}</h3>
         <div className="kv"><span>Mass</span><span>{(c.telemetry_and_4d.mass_kg * 1000).toFixed(2)} g</span></div>

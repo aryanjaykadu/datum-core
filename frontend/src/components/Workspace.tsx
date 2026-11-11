@@ -21,8 +21,10 @@ import MenuBar, { type Menus } from "./MenuBar";
 import PropertyPanel from "./PropertyPanel";
 import QuotePanel from "./QuotePanel";
 import RoboticsPanel from "./RoboticsPanel";
-import Ribbon from "./Ribbon";
 import RunLog, { type LogLine } from "./RunLog";
+import ToolRail from "./ToolRail";
+import ThemeQuick from "./ThemeQuick";
+import Icon from "./Icon";
 import HistoryPanel from "./HistoryPanel";
 import CalculatorsDialog from "./CalculatorsDialog";
 import TemplateGallery from "./TemplateGallery";
@@ -55,7 +57,8 @@ export default function Workspace() {
   const [showSettings, setShowSettings] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
   const [showPalette, setShowPalette] = useState(false);
-  const [panels, setPanels] = useState({ tree: true, inspector: true, dock: true });
+  const [panels, setPanels] = useState({ tree: true, inspector: true, dock: false });
+  const [railOpen, setRailOpen] = useState<string | null>(null);
   const [showWelcome, setShowWelcome] = useState(false);
   const [version, setVersion] = useState<string>("");
   const togglePanel = (k: keyof typeof panels) => setPanels((p) => ({ ...p, [k]: !p[k] }));
@@ -146,7 +149,7 @@ export default function Workspace() {
       }
       await support.clearAutosave();
       try {
-        if (!localStorage.getItem("datum.welcomed")) setShowWelcome(true);
+        // the start hub in the empty viewport replaces the first-run pop-up
       } catch {}
     }).catch(() => undefined);
     files.takeLaunchFile().then((p) => { if (p) void openPath(p); }).catch(() => undefined);
@@ -164,10 +167,10 @@ export default function Workspace() {
   useEffect(() => setVolume(settings.volume), [settings.volume]);
   // colour theme: CSS variables now, viewport colours on the next frame
   useEffect(() => {
-    const t = resolveTheme(settings.theme, settings.accent);
+    const t = resolveTheme(settings.theme, settings.accent, settings.custom);
     applyTheme(t);
     if (vp.current) (vp.current.colours = viewportColours(t), vp.current.glass.tint = glassTint(t), vp.current.request());
-  }, [settings.theme, settings.accent]);
+  }, [settings.theme, settings.accent, settings.custom]);
   // autosave a few seconds after each change while there are unsaved edits
   useEffect(() => {
     if (!dirty || !isTauri() || doc.features.length === 0) return;
@@ -539,6 +542,13 @@ export default function Workspace() {
       <MenuBar menus={menus} title={basename(path) ?? doc.name ?? "Untitled"} dirty={dirty} badge={locked ? "LOCKED" : undefined}
         extra={
           <div className="ws-switch">
+            <button className="tb-search" onClick={() => setShowPalette(true)} title="Search tools and commands (Ctrl+K)">
+              <Icon name="search" size={15} /><span>Search tools…</span><kbd>Ctrl K</kbd>
+            </button>
+            <button className="tb-icon" title="Undo (Ctrl+Z)" aria-label="Undo" disabled={!history.current.canUndo} onClick={undo}><Icon name="undo" /></button>
+            <button className="tb-icon" title="Redo (Ctrl+Y)" aria-label="Redo" disabled={!history.current.canRedo} onClick={redo}><Icon name="redo" /></button>
+            <ThemeQuick settings={settings} onChange={updateSettings} onCustomise={() => setShowSettings(true)} />
+            <button className="tb-icon" title="Settings (Ctrl+,)" aria-label="Settings" onClick={() => setShowSettings(true)}><Icon name="settings" /></button>
             <select value={settings.workspace} title="Discipline: which tools the ribbon shows" aria-label="Workspace"
               onChange={(e) => updateSettings({ workspace: e.target.value as typeof settings.workspace })}>
               <option value="all">All disciplines</option>
@@ -553,14 +563,15 @@ export default function Workspace() {
             </div>
           </div>
         } />
-      <Ribbon catalog={catalog} op={op} onOp={setOp} onInsert={(t) => insert(t)} hasBody={doc.features.length > 0} mode={settings.mode} workspace={settings.workspace} />
+      <ToolRail catalog={catalog} op={op} onOp={setOp} onInsert={(t) => insert(t)} hasBody={doc.features.length > 0} mode={settings.mode} workspace={settings.workspace}
+        openGroup={railOpen} onOpenGroup={setRailOpen} />
 
       <FeatureTree doc={doc} catalog={catalog} selected={selected} onSelect={setSelected} warnings={result?.warnings ?? []}
         onRename={(id, name) => patchFeature(id, { name })} onDelete={removeFeature}
         onToggle={(id) => patchFeature(id, { suppressed: !doc.features.find((f) => f.id === id)?.suppressed })} />
 
-      <ViewportPanel insets={{ left: panels.tree ? 276 : 0, right: panels.inspector ? 346 : 0, top: 120, bottom: panels.dock ? 262 : 36 }}
-        onReady={(v) => { vp.current = v; const t = resolveTheme(settingsRef.current.theme, settingsRef.current.accent); v.colours = viewportColours(t); v.glass.tint = glassTint(t); }} markers={markers} settings={settings} onSettings={updateSettings}
+      <ViewportPanel insets={{ left: 72 + (panels.tree ? 248 : 0), right: panels.inspector ? 346 : 0, top: 60, bottom: panels.dock ? 300 : 96 }}
+        onReady={(v) => { vp.current = v; const t = resolveTheme(settingsRef.current.theme, settingsRef.current.accent, settingsRef.current.custom); v.colours = viewportColours(t); v.glass.tint = glassTint(t); }} markers={markers} settings={settings} onSettings={updateSettings}
         onPickPoint={(hit) => {
           if (robotPick.current && rightTab === "robotics") return robotPick.current(hit.position);
           kernel.featureAt(hit.position).then((r) => {
@@ -570,13 +581,28 @@ export default function Workspace() {
             setRightTab("properties");
           }).catch(() => undefined);
         }}
+        onStart={(what) => {
+          if (what === "templates") setShowGallery(true);
+          else if (what === "shapes") setRailOpen("Primitive");
+          else if (what === "import") void pickImportFile().then((p) => { if (p) void importFile(p); });
+          else if (what === "open") void open();
+          else if (what === "calc") setShowCalc(true);
+          else if (catalog) {
+            const r = insertFeature(emptyDocument(), catalog, "extrude", "new");
+            commit(r.doc);
+            setSelected(r.selected);
+            setRightTab("properties");
+          }
+        }}
         onHover={setHover} onError={(m) => pushLog("error", "gpu", m)} empty={doc.features.length === 0} busy={busy} />
 
       <aside className="glass area-inspector scroll">
         <div className="panel-title">
           <div className="tabs" role="tablist">
             {(["properties", "analysis", "quote", "robotics"] as const).map((t) => (
-              <button key={t} role="tab" aria-selected={rightTab === t} onClick={() => setRightTab(t)}>{{ properties: "Properties", analysis: "Analysis", quote: "Quote", robotics: "Robotics" }[t]}</button>
+              <button key={t} role="tab" aria-selected={rightTab === t} onClick={() => setRightTab(t)} title={{ properties: "Edit the selected feature", analysis: "Mass, checks and print estimate", quote: "Manufacturing cost estimate", robotics: "Robot reach and posing" }[t]}>
+                <Icon name={t === "robotics" ? "Robotics" : t} size={15} />{{ properties: "Edit", analysis: "Analyse", quote: "Quote", robotics: "Robot" }[t]}
+              </button>
             ))}
           </div>
         </div>
@@ -597,9 +623,9 @@ export default function Workspace() {
       <section className="glass area-dock">
         <div className="panel-title">
           <div className="tabs" role="tablist">
-            <button role="tab" aria-selected={dock === "graph"} onClick={() => setDock("graph")}>Feature graph</button>
-            <button role="tab" aria-selected={dock === "log"} onClick={() => setDock("log")}>Run log</button>
-            <button role="tab" aria-selected={dock === "history"} onClick={() => setDock("history")}>History</button>
+            <button role="tab" aria-selected={dock === "graph"} onClick={() => setDock("graph")}><Icon name="graph" size={14} />Feature graph</button>
+            <button role="tab" aria-selected={dock === "history"} onClick={() => setDock("history")}><Icon name="history" size={14} />History</button>
+            <button role="tab" aria-selected={dock === "log"} onClick={() => setDock("log")}><Icon name="log" size={14} />Run log</button>
           </div>
         </div>
         {dock === "history" ? <HistoryPanel entries={history.current.entries} onTravel={travel} /> : dock === "log" ? <RunLog lines={log} progress={busy ? 0.6 : null} /> : (
@@ -611,7 +637,11 @@ export default function Workspace() {
         )}
       </section>
 
-      <StatusBar hover={hover} result={result} settings={settings} busy={busy} error={error} path={path} locked={locked} />
+      <StatusBar hover={hover} result={result} settings={settings} busy={busy} error={error} path={path} locked={locked}
+        dock={panels.dock ? dock : null} onDock={(d) => {
+          if (d === null || (panels.dock && dock === d)) setPanels((p) => ({ ...p, dock: false }));
+          else (setDock(d), setPanels((p) => ({ ...p, dock: true })));
+        }} />
 
       {showWelcome && (
         <div className="modal-backdrop" onPointerDown={() => setShowWelcome(false)}>

@@ -36,9 +36,24 @@ export function hexToRgb(hex: string): [number, number, number] {
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
 
+export interface CustomColours { canvas: string; panel: string; text: string; accent: string; accent2: string }
+
+/** A full theme from five user colours: dim and faint text and hairlines are derived. */
+export function customTheme(c: CustomColours): Theme {
+  const mix = (a: string, b: string, t: number) => {
+    const x = hexToRgb(a), y = hexToRgb(b);
+    return "#" + x.map((v, i) => Math.round(v + (y[i] - v) * t).toString(16).padStart(2, "0")).join("");
+  };
+  return {
+    key: "custom", label: "Custom", accent: c.accent, accent2: c.accent2, canvas: c.canvas, text: c.text,
+    textDim: mix(c.text, c.canvas, 0.42), textFaint: mix(c.text, c.canvas, 0.62), hairline: mix(c.panel, c.text, 0.08),
+    glass: hexToRgb(c.panel).join(", "),
+  };
+}
+
 /** Resolve the theme, with an optional custom accent overriding the preset's. */
-export function resolveTheme(key: string, customAccent?: string): Theme {
-  const base = THEMES.find((t) => t.key === key) ?? THEMES[0];
+export function resolveTheme(key: string, customAccent?: string, custom?: CustomColours): Theme {
+  const base = key === "custom" && custom ? customTheme(custom) : THEMES.find((t) => t.key === key) ?? THEMES[0];
   return customAccent && /^#[0-9a-f]{6}$/i.test(customAccent) ? { ...base, accent: customAccent } : base;
 }
 
