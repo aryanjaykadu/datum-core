@@ -64,6 +64,13 @@ cd src-tauri && cargo test --release                             # .datum encryp
 - **Click to select**: click a face in the viewport to select the feature that made it (a hole wall selects the hole).
 - **Robot jogging**: move the tool ±X/Y/Z by a step, or click a point on the part to send it there (damped least-squares inverse kinematics within joint limits).
 
+## Smooth on any PC (v1.4)
+
+- While the camera moves, the part is drawn from its watertight triangle mesh (a few operations per pixel) instead of ray marching the exact field, so orbiting holds 60 fps at full resolution on every template, including the swept wing (was 2–10 fps).
+- When the camera stops, Auto shows the exact ray-traced image; if this PC is slow at that, it keeps the mesh for stills too.
+- The Performance preset (Settings → Viewport) uses the mesh all the time, without shadows, glass blur or animation: suited to integrated graphics.
+- Section, X-ray, normals and manufacturability views always use the exact field.
+
 ## Sketch and import
 
 - **Sketch → Extrude / Revolve**: edit the profile in the property panel (drag points, `+` to insert, per-point fillet radius). The profile becomes an exact signed-distance field.

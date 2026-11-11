@@ -101,6 +101,7 @@ export const kernel = {
   evaluate: (document: DatumDocument, quality: "draft" | "fine", gpuMb: number) =>
     invoke<Evaluation>("evaluate", { document, quality, gpuMb }),
   scene: (bricks: number) => invoke<ArrayBuffer>("engine_binary", { method: "scene", params: { bricks } }),
+  mesh: () => invoke<ArrayBuffer>("engine_binary", { method: "mesh", params: {} }),
   quote: (material: string, quantity: number) => invoke<Quote>("engine_call", { method: "quote", params: { material, quantity } }),
   robotReach: async (preset: string, center: Vec3, samples: number, threshold: number, collisions = true, floor = true,
     robot?: import("./urdf").RobotDef): Promise<ReachCloud> => {

@@ -10,7 +10,7 @@ struct Uniforms {
   hi: vec4f,       // grid max, w = brick size
   view: vec4f,     // width, height, mode (0 shaded 1 cost 2 normals 3 xray), floor z
   section: vec4f,  // plane normal xyz (0 = off), offset: keep dot(p, n) <= w
-  misc: vec4f,     // grid on, pick x, pick y, unused
+  misc: vec4f,     // grid on, pick x, pick y, w = 1: background only (the part is drawn as a mesh)
   shift: vec4f,    // lens shift (NDC) x, y to centre the open area; z = high quality (shadows)
   accent: vec4f,   // theme accent (cool rim light, bloom)
   accent2: vec4f,  // theme secondary accent (warm rim light, bloom)
@@ -303,7 +303,9 @@ fn shade(frag: vec4f) -> vec4f {
   if (U.misc.x > 0.5 && rd.z < 0.0 && ro.z > U.view.w) { tfloor = (U.view.w - ro.z) / rd.z; }
   let key = normalize(vec3f(0.45, -0.55, 0.85));
 
-  let h = trace(ro, rd);
+  var h = Hit(FAR, 0u, -1, false);
+  let mesh_part = U.misc.w > 0.5;
+  if (!mesh_part) { h = trace(ro, rd); }
   if (h.t < FAR && h.t <= tfloor + 1e-3) {
     let p = ro + rd * h.t;
     g_depth = view_depth(p);
@@ -357,8 +359,17 @@ fn shade(frag: vec4f) -> vec4f {
     let fade = exp(-length(p.xy - (U.lo.xy + U.hi.xy) * 0.5) / (U.hi.w * U.lo.w * 1.5));
     col = mix(col, vec3f(0.14, 0.15, 0.18), line * fade * 0.8);
     var sh = 1.0;
-    if (hq) { sh = soft_shadow(p + vec3f(0.0, 0.0, 0.01 * U.hi.w), key); }
-    let contact = clamp(part(p + vec3f(0.0, 0.0, 0.4 * U.hi.w)) / (1.2 * U.hi.w), 0.0, 1.0);
+    var contact = 1.0;
+    if (mesh_part) {
+      // cheap stand-in for the field-based contact shadow: soft falloff around the part's footprint
+      let c = (U.lo.xy + U.hi.xy) * 0.5;
+      let half = (U.hi.xy - U.lo.xy) * 0.5 / 1.04 * 0.85;
+      let q = max(abs(p.xy - c) - half, vec2f(0.0));
+      contact = clamp(length(q) / (1.5 * U.hi.w), 0.0, 1.0);
+    } else {
+      if (hq) { sh = soft_shadow(p + vec3f(0.0, 0.0, 0.01 * U.hi.w), key); }
+      contact = clamp(part(p + vec3f(0.0, 0.0, 0.4 * U.hi.w)) / (1.2 * U.hi.w), 0.0, 1.0);
+    }
     col *= mix(0.35, 1.0, sh) * mix(0.55, 1.0, contact * contact);
   }
   // ACES filmic tone map + gamma

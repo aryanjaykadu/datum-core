@@ -196,6 +196,10 @@ export default function Workspace() {
         if (seq !== evalSeq.current) return;
         if (vp.current) vp.current.material = Math.max(0, ["al6061t6", "al7075t6", "ti64", "ss316", "s355", "pa12"].indexOf(docRef.current.material ?? ""));
         vp.current?.setScene(scene, r.geometry.bbox_min, r.geometry.bbox_max);
+        // the triangle mesh keeps camera motion fluid (and is the whole view on low-end presets)
+        const mesh = await kernel.mesh().catch(() => null);
+        if (seq !== evalSeq.current) return;
+        vp.current?.setMesh(mesh);
         setResult(r);
         setError(null);
         r.warnings.forEach((w) => pushLog("warn", "model", w));

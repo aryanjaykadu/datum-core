@@ -1,5 +1,6 @@
 import { POINTS_WGSL } from "./pointShader";
 import { RAYMARCH_WGSL } from "./shader";
+import { MESH_WGSL } from "./meshShader";
 import type { Vec3 } from "./ipc";
 
 export type DisplayMode = "shaded" | "cost" | "normals" | "xray" | "dfm";
@@ -49,6 +50,15 @@ export class Viewport {
   cloud = { visible: true, mode: 0 as 0 | 1, alpha: 0.16, voxel: 1, threshold: 0.05 };
 
   private anim = 0;
+  private meshPipeline: GPURenderPipeline | null = null;
+  private meshVB: GPUBuffer | null = null;
+  private meshIB: GPUBuffer | null = null;
+  private meshBind: GPUBindGroup | null = null;
+  private meshIndices = 0;
+  /** This frame draws the part from its triangle mesh (background-only ray pass). */
+  private meshFrame = false;
+  /** Stills of this scene are slow on this GPU: draw them from the mesh too. */
+  private slowStills = 0;
   /** Resolution scale while the camera moves; steered every frame towards perf.targetMs. */
   private dyn = 0.5;
   /** Resolution scale of the full-quality still; lowered when a still takes too long. */
@@ -56,7 +66,7 @@ export class Viewport {
   private rendering = false;
   private again = false;
   private lastPoke = 0;
-  perf = { targetMs: 16.7, maxPixels: 3.5e6, shadows: true, auto: true };
+  perf = { targetMs: 16.7, maxPixels: 3.5e6, shadows: true, auto: true, alwaysMesh: false };
   private spin: [number, number] = [0, 0];
   cam = { yaw: VIEWS.iso[0], pitch: VIEWS.iso[1], dist: 200, target: [0, 0, 0] as Vec3, fov: 32, ortho: false };
   mode: DisplayMode = "shaded";
@@ -95,6 +105,7 @@ export class Viewport {
 
   /** Upload a scene produced by the kernel's `scene` method. */
   setScene(buffer: ArrayBuffer, partLo: Vec3, partHi: Vec3) {
+    this.slowStills = 0;
     const head = new Uint32Array(buffer, 0, 4);
     const box = new Float32Array(buffer, 16, 6);
     const [n, registers, count, codeCount] = head;
@@ -350,7 +361,7 @@ export class Viewport {
     requestAnimationFrame(() => void this.render());
   }
 
-  private writeUniforms(pickX = 0, pickY = 0) {
+  private writeUniforms(pickX = 0, pickY = 0, picking = false) {
     const s = this.scene!;
     const { eye, forward, right, up } = this.basis();
     const sec = this.section;
@@ -365,7 +376,7 @@ export class Viewport {
       ...s.hi, (s.hi[0] - s.lo[0]) / s.n,
       this.canvas.width, this.canvas.height, MODE_INDEX[this.mode], this.partLo[2],
       axis[0] * sign, axis[1] * sign, axis[2] * sign, sec.offset * sign,
-      this.grid ? 1 : 0, pickX, pickY, 0,
+      this.grid ? 1 : 0, pickX, pickY, this.meshFrame && !picking ? 1 : 0,
       ...this.lensShift(), this.interacting || !this.perf.shadows ? 0 : 1, 0,
       ...this.colours.accent, 1, ...this.colours.accent2, 1, ...this.colours.bg, 1,
     ]));
@@ -374,16 +385,60 @@ export class Viewport {
   /** Speed/quality preset. "auto" starts balanced and backs off on slow GPUs. */
   setPerformance(preset: "auto" | "quality" | "balanced" | "performance") {
     this.perf = {
-      auto: { targetMs: 16.7, maxPixels: 3.5e6, shadows: true, auto: true },
-      quality: { targetMs: 33, maxPixels: 3.5e6, shadows: true, auto: false },
-      balanced: { targetMs: 16.7, maxPixels: 2.5e6, shadows: true, auto: false },
-      performance: { targetMs: 11, maxPixels: 1.2e6, shadows: false, auto: false },
+      auto: { targetMs: 16.7, maxPixels: 3.5e6, shadows: true, auto: true, alwaysMesh: false },
+      quality: { targetMs: 33, maxPixels: 3.5e6, shadows: true, auto: false, alwaysMesh: false },
+      balanced: { targetMs: 16.7, maxPixels: 2.5e6, shadows: true, auto: false, alwaysMesh: false },
+      performance: { targetMs: 11, maxPixels: 1.6e6, shadows: false, auto: false, alwaysMesh: true },
     }[preset];
     this.request();
   }
+  /**
+   * The part's triangle mesh from the engine ("DMSH": magic, version, vertices, indices | positions |
+   * normals | u32 indices). Drawn instead of ray marching while the camera moves, and always on
+   * low-end presets: rasterising costs a few operations per pixel, not a field per ray step.
+   */
+  setMesh(buffer: ArrayBuffer | null) {
+    this.meshVB?.destroy();
+    this.meshIB?.destroy();
+    this.meshVB = this.meshIB = null;
+    this.meshIndices = 0;
+    if (buffer && buffer.byteLength >= 16) {
+      const [magic, , nv, ni] = new Uint32Array(buffer, 0, 4);
+      if (magic === 0x48534d44 && buffer.byteLength >= 16 + nv * 24 + ni * 4 && ni > 0) {
+        const pos = new Float32Array(buffer, 16, nv * 3), nrm = new Float32Array(buffer, 16 + nv * 12, nv * 3);
+        const vb = new Float32Array(nv * 6);
+        for (let i = 0; i < nv; i++) {
+          vb[i * 6] = pos[i * 3]; vb[i * 6 + 1] = pos[i * 3 + 1]; vb[i * 6 + 2] = pos[i * 3 + 2];
+          vb[i * 6 + 3] = nrm[i * 3]; vb[i * 6 + 4] = nrm[i * 3 + 1]; vb[i * 6 + 5] = nrm[i * 3 + 2];
+        }
+        this.meshVB = this.device.createBuffer({ size: vb.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
+        this.device.queue.writeBuffer(this.meshVB, 0, vb);
+        this.meshIB = this.device.createBuffer({ size: ni * 4, usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST });
+        this.device.queue.writeBuffer(this.meshIB, 0, new Uint32Array(buffer, 16 + nv * 24, ni));
+        this.meshIndices = ni;
+        if (!this.meshPipeline) {
+          const module = this.device.createShaderModule({ code: MESH_WGSL });
+          this.meshPipeline = this.device.createRenderPipeline({
+            layout: "auto",
+            vertex: { module, entryPoint: "vs", buffers: [{ arrayStride: 24, attributes: [
+              { shaderLocation: 0, offset: 0, format: "float32x3" }, { shaderLocation: 1, offset: 12, format: "float32x3" }] }] },
+            fragment: { module, entryPoint: "fs", targets: [{ format: this.format }] },
+            primitive: { topology: "triangle-list", cullMode: "none" },
+            depthStencil: { format: "depth24plus", depthWriteEnabled: true, depthCompare: "less" },
+          });
+          this.meshBind = this.device.createBindGroup({ layout: this.meshPipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: this.uniform } }] });
+        }
+      }
+    }
+    this.request();
+  }
+  /** Whether the last frame was drawn from the mesh. */
+  get usingMesh() {
+    return this.meshFrame;
+  }
   /** Fraction of full resolution used for the last frame (1 when idle). */
   get renderScale() {
-    return this.interacting ? this.dyn : this.still;
+    return this.meshFrame ? 1 : this.interacting ? this.dyn : this.still;
   }
   private resize(scale: number) {
     // full quality is capped (~3.5 MP by default): beyond that the ray marcher costs more than it shows
@@ -407,7 +462,11 @@ export class Viewport {
     }
     this.rendering = true;
     const moving = this.interacting;
-    this.resize(moving ? this.dyn : this.still);
+    // mesh when it exists, the view is plain shaded with no section, and the GPU benefits
+    this.meshFrame = this.meshIndices > 0 && this.mode === "shaded" && this.section.axis === "off" &&
+      (moving || this.perf.alwaysMesh || this.slowStills >= 2);
+    // raster frames are cheap: always full (capped) resolution, so motion stays sharp
+    this.resize(this.meshFrame ? 1 : moving ? this.dyn : this.still);
     this.writeUniforms();
     const enc = this.device.createCommandEncoder();
     if (!this.depth || this.depth.width !== this.canvas.width || this.depth.height !== this.canvas.height) {
@@ -421,6 +480,13 @@ export class Viewport {
     pass.setPipeline(this.pipeline);
     pass.setBindGroup(0, this.bind);
     pass.draw(3);
+    if (this.meshFrame && this.meshPipeline && this.meshBind) {
+      pass.setPipeline(this.meshPipeline);
+      pass.setBindGroup(0, this.meshBind);
+      pass.setVertexBuffer(0, this.meshVB!);
+      pass.setIndexBuffer(this.meshIB!, "uint32");
+      pass.drawIndexed(this.meshIndices);
+    }
     if (this.cloud.visible && this.cloudCount && this.cloudPipeline && this.cloudBind) {
       this.device.queue.writeBuffer(this.cloudUniform!, 0, new Float32Array([this.cloud.voxel, this.cloud.threshold, this.cloud.alpha, this.cloud.mode]));
       pass.setPipeline(this.cloudPipeline);
@@ -432,7 +498,9 @@ export class Viewport {
     this.device.queue.submit([enc.finish()]);
     await this.device.queue.onSubmittedWorkDone();
     const ms = performance.now() - t0;
-    if (moving) {
+    if (this.meshFrame) {
+      // raster frames are cheap: nothing to adapt
+    } else if (moving) {
       // frame cost scales with pixel count: move the scale towards the target, gently
       const k = Math.max(0.7, Math.min(1.2, Math.sqrt(this.perf.targetMs / Math.max(ms, 0.5))));
       this.dyn = Math.max(0.12, Math.min(1, this.dyn * k));
@@ -444,6 +512,8 @@ export class Viewport {
       }
       // the GPU cannot be interrupted: keep stills short so the next input is not stuck behind one
       if (ms > 250) this.still = Math.max(0.3, this.still * Math.sqrt(250 / ms));
+      // on Auto, a GPU that keeps taking long over exact stills gets mesh stills for this part
+      if (this.perf.auto && ms > 120) this.slowStills++;
       else if (ms < 100 && this.still < 1) this.still = Math.min(1, this.still * 1.15);
     }
     this.rendering = false;
@@ -471,7 +541,7 @@ export class Viewport {
     if (!this.scene || !this.pickPipeline || !this.pickBind) return null;
     const run = async () => {
       const scaleX = this.canvas.width / this.canvas.clientWidth, scaleY = this.canvas.height / this.canvas.clientHeight;
-      this.writeUniforms(cssX * scaleX, cssY * scaleY);
+      this.writeUniforms(cssX * scaleX, cssY * scaleY, true);
       const enc = this.device.createCommandEncoder();
       const pass = enc.beginComputePass();
       pass.setPipeline(this.pickPipeline!);
