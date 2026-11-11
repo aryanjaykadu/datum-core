@@ -1,9 +1,47 @@
 import type { DatumDocument } from "./ipc";
 
 /** Starter parts that show off the feature set; each is an ordinary editable feature tree. */
-export type Domain = "mechanical" | "robotics" | "automotive" | "aerospace";
+export type Domain = "printing" | "mechanical" | "robotics" | "automotive" | "aerospace";
 
 export const TEMPLATES: { key: string; label: string; domain: Domain; desc: string; doc: () => DatumDocument }[] = [
+  {
+    key: "shelf_bracket",
+    label: "Shelf bracket",
+    domain: "printing",
+    desc: "Gusseted L-bracket with M4 screw holes, carrying a 15 kg shelf. Ready to check and lighten.",
+    doc: () => ({
+      version: 1, units: "mm", name: "Shelf bracket", material: "pa12", root: "drilled",
+      features: [
+        { id: "profile", type: "extrude", name: "Bracket profile", params: { profile: [[0, 0, 0], [70, 0, 2], [70, 10, 1], [28, 10, 10], [10, 28, 10], [10, 70, 2], [0, 70, 1]], distance: 24 } },
+        { id: "wall1", type: "cylinder", name: "Wall screw hole", params: { radius: 2.25, height: 30, axis: "x", center: [5, 42, 12] } },
+        { id: "wall2", type: "cylinder", name: "Wall screw hole", params: { radius: 2.25, height: 30, axis: "x", center: [5, 60, 12] } },
+        { id: "shelf1", type: "cylinder", name: "Shelf screw hole", params: { radius: 2.25, height: 30, axis: "y", center: [50, 5, 12] } },
+        { id: "drilled", type: "subtract", name: "Drilled bracket", inputs: ["profile", "wall1", "wall2", "shelf1"], params: { blend: 0.4 } },
+      ],
+      study: {
+        fixtures: [{ center: [0, 42, 12], radius: 7 }, { center: [0, 60, 12], radius: 7 }],
+        loads: [{ center: [62, 10, 12], radius: 7, force: [0, -150, 0] }],
+      },
+    }),
+  },
+  {
+    key: "wall_hook",
+    label: "Wall hook",
+    domain: "printing",
+    desc: "Screw-on J hook. Comes with a 5 kg bag hanging on it.",
+    doc: () => ({
+      version: 1, units: "mm", name: "Wall hook", material: "pa12", root: "hook",
+      features: [
+        { id: "body", type: "extrude", name: "Hook profile", params: { profile: [[0, 0, 0], [34, 0, 8], [34, 24, 3], [28, 24, 2], [28, 6, 4], [6, 6, 2], [6, 64, 3], [0, 64, 0]], distance: 16 } },
+        { id: "screw", type: "cylinder", name: "Screw hole", params: { radius: 2.25, height: 20, axis: "x", center: [3, 50, 8] } },
+        { id: "hook", type: "subtract", name: "Hook", inputs: ["body", "screw"], params: { blend: 0.4 } },
+      ],
+      study: {
+        fixtures: [{ center: [0, 50, 8], radius: 7 }],
+        loads: [{ center: [31, 24, 8], radius: 5, force: [0, -50, 0] }],
+      },
+    }),
+  },
   {
     key: "bolt",
     label: "M8 hex bolt",

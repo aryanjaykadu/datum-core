@@ -4,7 +4,7 @@ import { useState } from "react";
 import { TEMPLATES, type Domain } from "@/lib/templates";
 
 const DOMAINS: { key: Domain | "all"; label: string }[] = [
-  { key: "all", label: "All" }, { key: "mechanical", label: "Mechanical" }, { key: "robotics", label: "Robotics" },
+  { key: "all", label: "All" }, { key: "printing", label: "3D printing" }, { key: "mechanical", label: "Mechanical" }, { key: "robotics", label: "Robotics" },
   { key: "automotive", label: "Automotive" }, { key: "aerospace", label: "Aerospace" },
 ];
 

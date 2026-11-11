@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { click, reject, setSoundEnabled, setSoundPack, setVolume, validate } from "@/lib/audio";
 import { applyTheme, glassTint, resolveTheme, viewportColours } from "@/lib/themes";
 import { deleteFeature, emptyDocument, History, insertFeature, updateFeature, type Operation } from "@/lib/document";
-import type { PickResult, Viewport } from "@/lib/gpu";
+import type { DisplayMode, PickResult, Viewport } from "@/lib/gpu";
 import {
   confirmDialog, files, importCad, isTauri, kernel, listen, pickImportFile, pickOpenPath, pickSavePath, setWindowTitle, support, windowAction,
   type Catalog, type DatumDocument, type Vec3, type Evaluation, type Feature, exporter,
@@ -24,6 +24,8 @@ import RoboticsPanel from "./RoboticsPanel";
 import RunLog, { type LogLine } from "./RunLog";
 import ToolRail from "./ToolRail";
 import StrengthPanel from "./StrengthPanel";
+import WorkflowBar from "./WorkflowBar";
+import PrintDialog from "./PrintDialog";
 import ThemeQuick from "./ThemeQuick";
 import Icon from "./Icon";
 import HistoryPanel from "./HistoryPanel";
@@ -38,6 +40,7 @@ const basename = (p: string | null) => (p ? p.split(/[\\/]/).pop()! : null);
 export default function Workspace() {
   const [settings, updateSettings] = useSettings();
   const robotPick = useRef<((p: Vec3) => void) | null>(null);
+  const fitNext = useRef(false);
   const strengthPick = useRef<((p: PickResult) => void) | null>(null);
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
@@ -61,6 +64,10 @@ export default function Workspace() {
   const [showPalette, setShowPalette] = useState(false);
   const [panels, setPanels] = useState({ tree: true, inspector: true, dock: false });
   const [railOpen, setRailOpen] = useState<string | null>(null);
+  const [checkedSf, setCheckedSf] = useState<number | null>(null);
+  const [seen, setSeen] = useState({ printcheck: false, print: false });
+  const [showPrint, setShowPrint] = useState(false);
+  const [modeRequest, setModeRequest] = useState<{ mode: DisplayMode; n: number } | undefined>(undefined);
   const [showWelcome, setShowWelcome] = useState(false);
   const [version, setVersion] = useState<string>("");
   const togglePanel = (k: keyof typeof panels) => setPanels((p) => ({ ...p, [k]: !p[k] }));
@@ -99,7 +106,7 @@ export default function Workspace() {
     setDirty(false);
     setSelected(null);
     setResult(null);
-    vp.current?.fit();
+    fitNext.current = true;  // frame the new part once its geometry arrives
   }, []);
   const undo = () => {
     const prev = history.current.undo(docRef.current);
@@ -201,6 +208,7 @@ export default function Workspace() {
         if (seq !== evalSeq.current) return;
         if (vp.current) vp.current.material = Math.max(0, ["al6061t6", "al7075t6", "ti64", "ss316", "s355", "pa12"].indexOf(docRef.current.material ?? ""));
         vp.current?.setScene(scene, r.geometry.bbox_min, r.geometry.bbox_max);
+        if (fitNext.current) (fitNext.current = false, vp.current?.fit());
         // the triangle mesh keeps camera motion fluid (and is the whole view on low-end presets)
         const mesh = await kernel.mesh().catch(() => null);
         if (seq !== evalSeq.current) return;
@@ -324,9 +332,9 @@ export default function Workspace() {
     const name = (doc.name ?? "part").replace(/[\/:*?"<>|]/g, "_");
     try {
       const dir = await exporter.dir();
-      const out = toSlicer ? `${dir}\${name}.3mf` : await pickSavePath(`${name}.3mf`, "3mf");
+      const out = toSlicer ? `${dir}\\${name}.3mf` : await pickSavePath(`${name}.3mf`, "3mf");
       if (!out) return;
-      const stl = `${dir}\${name}.${Date.now()}.tmp.stl`;
+      const stl = `${dir}\\${name}.${Date.now()}.tmp.stl`;
       await kernel.exportStl(stl);
       const r = await exporter.stlTo3mf(stl, out, name);
       pushLog("info", "export", `3MF: ${r.triangles.toLocaleString()} triangles, ${r.vertices.toLocaleString()} vertices → ${out}`);
@@ -438,7 +446,7 @@ export default function Workspace() {
       else if (mod && k === "n") (e.preventDefault(), void newDoc(false));
       else if (mod && e.shiftKey && k === "c") (e.preventDefault(), setShowCalc(true));
       else if (mod && k === "e") (e.preventDefault(), void exportStl());
-      else if (mod && k === "p" && !e.shiftKey) (e.preventDefault(), void export3mf(true));
+      else if (mod && k === "p" && !e.shiftKey) (e.preventDefault(), setShowPrint(true), setSeen((s) => ({ ...s, print: true })));
       else if (mod && k === "p" && e.shiftKey) (e.preventDefault(), void screenshot());
       else if (mod && k === ",") (e.preventDefault(), setShowSettings(true));
       else if (mod && k === "k") (e.preventDefault(), setShowPalette(true));
@@ -470,7 +478,8 @@ export default function Workspace() {
       { separator: true },
       { label: "Export STL…", shortcut: "Ctrl+E", action: () => void exportStl(), disabled: !result },
       { label: "Export 3MF…", action: () => void export3mf(false), disabled: !result },
-      { label: "Send to slicer (3MF)", shortcut: "Ctrl+P", action: () => void export3mf(true), disabled: !result },
+      { label: "Print…", shortcut: "Ctrl+P", action: () => (setShowPrint(true), setSeen((s) => ({ ...s, print: true }))), disabled: !result },
+      { label: "Send to slicer (3MF)", action: () => void export3mf(true), disabled: !result },
       { label: "Save screenshot (PNG)…", shortcut: "Ctrl+Shift+P", action: () => void screenshot(), disabled: !result },
       { separator: true },
       { label: "Exit", action: () => void closeApp() },
@@ -599,6 +608,7 @@ export default function Workspace() {
             setRightTab("properties");
           }
         }}
+        modeRequest={modeRequest} onMode={(m) => { if (m === "dfm") setSeen((s) => (s.printcheck ? s : { ...s, printcheck: true })); }}
         onHover={setHover} onError={(m) => pushLog("error", "gpu", m)} empty={doc.features.length === 0} busy={busy} />
 
       <aside className="glass area-inspector scroll">
@@ -619,7 +629,7 @@ export default function Workspace() {
           <StrengthPanel doc={doc} result={result} onDocChange={(p) => commit({ ...docRef.current, ...p })}
             setPickHandler={(h) => (strengthPick.current = h)}
             onStress={(v, scale) => vp.current?.setStress(v, scale)} onLog={(level, msg) => pushLog(level, "strength", msg)}
-            onLighten={(target) => insert("lighten", "add", { target }, true)} />
+            onLighten={(target) => insert("lighten", "add", { target }, true)} onChecked={setCheckedSf} />
         )}
         {rightTab === "analysis" && <Inspector result={result} settings={settings} />}
         {rightTab === "quote" && <QuotePanel result={result} catalog={catalog} material={doc.material} />}
@@ -648,6 +658,27 @@ export default function Workspace() {
         )}
       </section>
 
+      {doc.features.length > 0 && (
+        <WorkflowBar
+          done={{
+            part: doc.features.length > 0 && !!result,
+            hold: !!doc.study?.fixtures.length && !!doc.study?.loads.length,
+            check: checkedSf !== null,
+            lighten: doc.features.some((f) => f.type === "lighten" && !f.suppressed),
+            printcheck: seen.printcheck,
+            print: seen.print,
+          }}
+          onStep={(k) => {
+            if (k === "part") setShowGallery(true);
+            else if (k === "hold" || k === "check" || k === "lighten") (setRightTab("strength"), setPanels((p) => ({ ...p, inspector: true })));
+            else if (k === "printcheck") setModeRequest((r) => ({ mode: "dfm", n: (r?.n ?? 0) + 1 }));
+            else if (result) (setShowPrint(true), setSeen((s) => ({ ...s, print: true })));
+          }} />
+      )}
+      {showPrint && result && (
+        <PrintDialog doc={doc} result={result} settings={settings} onSettings={updateSettings} onClose={() => setShowPrint(false)}
+          onSend={() => { setShowPrint(false); void export3mf(true); }} onExport={() => { setShowPrint(false); void export3mf(false); }} />
+      )}
       <StatusBar hover={hover} result={result} settings={settings} busy={busy} error={error} path={path} locked={locked}
         dock={panels.dock ? dock : null} onDock={(d) => {
           if (d === null || (panels.dock && dock === d)) setPanels((p) => ({ ...p, dock: false }));
@@ -694,7 +725,7 @@ export default function Workspace() {
       )}
       {showPalette && <CommandPalette menus={menus} intents={intents} onClose={() => setShowPalette(false)} />}
       {showCalc && <CalculatorsDialog onClose={() => setShowCalc(false)} initial={{ automotive: "driveline", aerospace: "wing" }[settings.workspace as string]} />}
-      {showGallery && <TemplateGallery initial={settings.workspace} onClose={() => setShowGallery(false)} onPick={(key) => { setShowGallery(false); void newFromTemplate(key); }} />}
+      {showGallery && <TemplateGallery initial={settings.workspace === "all" ? "printing" : settings.workspace} onClose={() => setShowGallery(false)} onPick={(key) => { setShowGallery(false); void newFromTemplate(key); }} />}
       {showSettings && <SettingsDialog settings={settings} onChange={updateSettings} onClose={() => setShowSettings(false)} />}
       {showAbout && (
         <div className="modal-backdrop" onPointerDown={() => setShowAbout(false)}>

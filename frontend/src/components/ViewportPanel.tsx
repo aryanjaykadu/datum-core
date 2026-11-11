@@ -32,7 +32,7 @@ const VIEW_BUTTONS: [ViewName, string, string][] = [
   ["right", "Right", "4"], ["top", "Top", "5"], ["bottom", "Bottom", "6"],
 ];
 
-export default function ViewportPanel({ insets, onReady, markers, settings, onSettings, onHover, onError, empty, busy, onPickPoint, onStart }: {
+export default function ViewportPanel({ insets, onReady, markers, settings, onSettings, onHover, onError, empty, busy, onPickPoint, onStart, modeRequest, onMode }: {
   insets: { left: number; right: number; top: number; bottom: number };
   onReady: (v: Viewport) => void;
   markers: Marker[];
@@ -46,6 +46,9 @@ export default function ViewportPanel({ insets, onReady, markers, settings, onSe
   onPickPoint?: (p: PickResult) => void;
   /** Start hub choices on an empty document. */
   onStart?: (what: "templates" | "sketch" | "shapes" | "import" | "open" | "calc") => void;
+  /** Ask the view to switch display mode (n changes on every request). */
+  modeRequest?: { mode: DisplayMode; n: number };
+  onMode?: (m: DisplayMode) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const vpRef = useRef<Viewport | null>(null);
@@ -54,6 +57,10 @@ export default function ViewportPanel({ insets, onReady, markers, settings, onSe
   const [section, setSection] = useState<Section>({ axis: "off", offset: 0, flip: false });
   const [measure, setMeasure] = useState(false);
   const [pop, setPop] = useState<null | "views" | "display" | "section">(null);
+  useEffect(() => { if (modeRequest) setMode(modeRequest.mode); }, [modeRequest?.n]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    onMode?.(mode);  // effects must return nothing but a cleanup function
+  }, [mode]); // eslint-disable-line react-hooks/exhaustive-deps
   const [points, setPoints] = useState<Vec3[]>([]);
   const [triad, setTriad] = useState<{ x: number[]; y: number[]; z: number[] }>({ x: [1, 0], y: [0, 1], z: [0, -1] });
   const [ms, setMs] = useState<number | null>(null);
@@ -358,14 +365,14 @@ export default function ViewportPanel({ insets, onReady, markers, settings, onSe
       {busy && <div className="busy">Rebuilding…</div>}
       {empty && onStart && (
         <div className="start-hub">
-          <h1>What are you making today?</h1>
-          <p>Pick a starting point. Everything stays editable.</p>
+          <h1>What will you print today?</h1>
+          <p>Bring a part in, check it holds, make it lighter, send it to your printer.</p>
           <div className="start-grid">
             {([
-              ["template", "Start from a template", "Gears, wings, wheels, robots and more", "templates"],
+              ["import_mesh", "Import a part", "STEP, STL or OBJ from any CAD or Printables", "import"],
+              ["template", "Printable templates", "Brackets, hooks, enclosures, gears", "templates"],
               ["sketch", "Sketch a part", "Draw an outline, pull it into 3D", "sketch"],
               ["box", "Add a shape", "Boxes, cylinders and standard parts", "shapes"],
-              ["import_mesh", "Import CAD", "STEP, STL or OBJ from other software", "import"],
               ["folder", "Open a design", "Continue a .datum file", "open"],
               ["calculator", "Quick calculation", "Bolt torque, gears, beams, wings", "calc"],
             ] as const).map(([icon, title, hint, what]) => (

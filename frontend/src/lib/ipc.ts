@@ -55,7 +55,7 @@ export interface Evaluation {
   warnings: string[];
   geometry: {
     bbox_min: Vec3; bbox_max: Vec3; volume_mm3: number; area_mm2: number; centroid_mm: Vec3;
-    triangles: number; cell_mm: number; watertight: boolean; program_instructions: number; graph_nodes: number;
+    triangles: number; cell_mm: number; watertight: boolean; boundary_edges?: number; nonmanifold_edges?: number; program_instructions: number; graph_nodes: number;
   };
   material: { key: string; name: string; density_kg_m3: number };
   analysis: {

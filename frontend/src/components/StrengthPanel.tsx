@@ -20,7 +20,7 @@ const DIRECTIONS = [
  * Strength study, in three steps: where the part is held, where it is pushed, then solve.
  * Results colour the part by stress and give a safety factor against the material's yield.
  */
-export default function StrengthPanel({ doc, result, onDocChange, setPickHandler, onStress, onLog, onLighten }: {
+export default function StrengthPanel({ doc, result, onDocChange, setPickHandler, onStress, onLog, onLighten, onChecked }: {
   doc: DatumDocument;
   result: Evaluation | null;
   onDocChange: (patch: Partial<DatumDocument>) => void;
@@ -31,6 +31,8 @@ export default function StrengthPanel({ doc, result, onDocChange, setPickHandler
   onLog: (level: "info" | "warn" | "error", msg: string) => void;
   /** Add a stress-graded lattice that removes `target` % of the mass. */
   onLighten: (target: number) => void;
+  /** Safety factor of the latest study (null when stale). */
+  onChecked: (sf: number | null) => void;
 }) {
   const study: Study = doc.study ?? { fixtures: [], loads: [] };
   const [placing, setPlacing] = useState<Placing>(null);
@@ -52,6 +54,7 @@ export default function StrengthPanel({ doc, result, onDocChange, setPickHandler
   useEffect(() => {
     setRes(null);
     onStress(null, 1);
+    onChecked(null);
     // the lattice just rebuilt: check the lighter part straight away
     if (compare === "waiting" && result) {
       setCompare("ready");
@@ -86,6 +89,7 @@ export default function StrengthPanel({ doc, result, onDocChange, setPickHandler
     try {
       const r = await kernel.stress(study);
       setRes(r.stats);
+      onChecked(r.stats.safety_factor);
       onStress(r.vertexStress, Math.max(r.stats.p99_mpa, 1e-6));
       onLog("info", `stress study: ${r.stats.voxels.toLocaleString()} voxels of ${r.stats.voxel_mm.toFixed(2)} mm, ${r.stats.iterations} iterations, ${r.stats.seconds.toFixed(1)} s`);
       if (r.stats.safety_factor >= 1.5) validate(); else reject();

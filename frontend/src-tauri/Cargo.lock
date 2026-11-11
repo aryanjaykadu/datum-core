@@ -698,9 +698,10 @@ dependencies = [
 
 [[package]]
 name = "datum-core-enterprise"
-version = "1.8.0"
+version = "1.9.0"
 dependencies = [
  "aes-gcm",
+ "miniz_oxide 0.8.9",
  "rand",
  "serde",
  "serde_json",

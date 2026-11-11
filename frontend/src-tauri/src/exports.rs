@@ -67,22 +67,24 @@ fn crc32(bytes: &[u8]) -> u32 {
     !c
 }
 
-/// Minimal ZIP writer (stored entries): enough for an OPC package such as 3MF.
+/// Minimal ZIP writer (deflated entries): enough for an OPC package such as 3MF.
 fn zip_store(entries: &[(&str, Vec<u8>)]) -> Vec<u8> {
     let mut out = Vec::new();
     let mut central = Vec::new();
     for (name, body) in entries {
         let crc = crc32(body);
+        // deflate (method 8) as the 3MF spec allows: model XML shrinks several times over
+        let packed = miniz_oxide::deflate::compress_to_vec(body, 6);
         let offset = out.len() as u32;
         let local = |buf: &mut Vec<u8>, sig: u32, central: bool| {
             buf.extend_from_slice(&sig.to_le_bytes());
             if central {
                 buf.extend_from_slice(&20u16.to_le_bytes()); // version made by
             }
-            for v in [20u16, 0, 0, 0, 0x21] {
-                buf.extend_from_slice(&v.to_le_bytes()); // version, flags, method=store, time, date
+            for v in [20u16, 0, 8, 0, 0x21] {
+                buf.extend_from_slice(&v.to_le_bytes()); // version, flags, method=deflate, time, date
             }
-            for v in [crc, body.len() as u32, body.len() as u32] {
+            for v in [crc, packed.len() as u32, body.len() as u32] {
                 buf.extend_from_slice(&v.to_le_bytes());
             }
             buf.extend_from_slice(&(name.len() as u16).to_le_bytes());
@@ -97,7 +99,7 @@ fn zip_store(entries: &[(&str, Vec<u8>)]) -> Vec<u8> {
             buf.extend_from_slice(name.as_bytes());
         };
         local(&mut out, 0x0403_4b50, false);
-        out.extend_from_slice(body);
+        out.extend_from_slice(&packed);
         local(&mut central, 0x0201_4b50, true);
     }
     let cd_offset = out.len() as u32;
@@ -122,7 +124,8 @@ fn model_xml(name: &str, verts: &[[f32; 3]], tris: &[[u32; 3]]) -> String {
     s.push_str(&safe);
     s.push_str("\"><mesh><vertices>\n");
     for v in verts {
-        let _ = writeln!(s, r#"<vertex x="{}" y="{}" z="{}"/>"#, v[0], v[1], v[2]);
+        // 0.001 mm is far below any printer's resolution
+        let _ = writeln!(s, r#"<vertex x="{:.3}" y="{:.3}" z="{:.3}"/>"#, v[0], v[1], v[2]);
     }
     s.push_str("</vertices><triangles>\n");
     for t in tris {

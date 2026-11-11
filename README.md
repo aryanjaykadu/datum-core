@@ -71,6 +71,14 @@ cd src-tauri && cargo test --release                             # .datum encryp
 - The Performance preset (Settings → Viewport) uses the mesh all the time, without shadows, glass blur or animation: suited to integrated graphics.
 - Section, X-ray, normals and manufacturability views always use the exact field.
 
+## Design to print (v1.9)
+
+- **Step bar** over the 3D view: Part → Hold & load → Check → Lighten (optional) → Print check → Print. Each step shows done / next, and one click goes there.
+- **Print dialog** (Ctrl+P): choose your printer (Bambu Lab X1C, P1S, A1, A1 mini; Prusa MK4S, CORE One, XL; Creality Ender-3 V3/V2; Elegoo Neptune 4 Pro; or generic) and filament (PLA, PETG, ABS, ASA, TPU, PLA-CF, PA-CF). It checks the part fits the build volume (or fits when rotated), estimates time, grams and cost, and opens the 3MF in your slicer.
+- **3MF** files are compressed (a lightened bracket: 74 MB → 9.6 MB).
+- **Print-first start hub** and printable templates (shelf bracket, wall hook) that come with a strength study ready to run.
+- The model check separates real holes from touching edges that slicers repair automatically.
+
 ## Make it lighter (v1.8)
 
 After a strength study, **Make it lighter** (Strength tab, or Lattice → Make it lighter) keeps a solid skin and fills the inside with a gyroid lattice whose walls are **thick where the study shows high stress and thin where the part idles**, scaled automatically to remove the chosen share of the mass (20–60 %). Walls never go below 0.6 mm, so they print with a 0.4 mm nozzle. The part is then re-checked automatically and the panel shows before and after mass and safety factor.

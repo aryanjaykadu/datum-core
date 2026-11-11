@@ -269,6 +269,7 @@ json evaluate(Session& s, const json& params) {
         {"geometry", {{"bbox_min", {lo.x, lo.y, lo.z}}, {"bbox_max", {hi.x, hi.y, hi.z}}, {"volume_mm3", mp.volume_mm3},
                       {"area_mm2", mp.area_mm2}, {"centroid_mm", {mp.centroid.x, mp.centroid.y, mp.centroid.z}},
                       {"triangles", s.mesh.triangles.size()}, {"cell_mm", cell}, {"watertight", topo.watertight()},
+                      {"boundary_edges", topo.boundary_edges}, {"nonmanifold_edges", topo.nonmanifold_edges},
                       {"program_instructions", s.program.size()}, {"graph_nodes", s.graph->size()}}},
         {"material", {{"key", mat.key}, {"name", mat.name}, {"density_kg_m3", mat.density_kg_m3}}},
         {"analysis", {{"shells", shells.shells}, {"findings", findings},

@@ -24,6 +24,8 @@ export interface Settings {
   liquidGlass: boolean;
   /** Colours of the "custom" theme. */
   custom: { canvas: string; panel: string; text: string; accent: string; accent2: string };
+  printer: string;
+  filament: string;
   volume: number;
 }
 
@@ -32,6 +34,7 @@ export const DEFAULT_SETTINGS: Settings = {
   performance: "auto", mode: "pro", workspace: "all",
   theme: "midnight", accent: "", soundPack: "guitar", volume: 0.6, liquidGlass: true,
   custom: { canvas: "#0d1016", panel: "#181c26", text: "#eef1f6", accent: "#6ee7b7", accent2: "#fbbf24" },
+  printer: "bambu-p1s", filament: "pla",
 };
 
 const KEY = "datum.settings.v1";

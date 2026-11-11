@@ -2,6 +2,7 @@
 
 import type { Evaluation } from "@/lib/ipc";
 import { fmtLen, type Settings } from "@/lib/settings";
+import { filamentOf, formatDuration, printEstimate, printerOf } from "@/lib/printers";
 
 const fmtMass = (kg: number) => (kg >= 1 ? `${kg.toFixed(2)} kg` : `${(kg * 1000).toFixed(kg < 0.01 ? 2 : 1)} g`);
 const sci = (v: number) => (Math.abs(v) < 1e-15 ? "0" : Math.abs(v) < 1e-3 || Math.abs(v) >= 1e4 ? v.toExponential(3) : v.toPrecision(4));
@@ -28,7 +29,11 @@ export default function Inspector({ result, settings }: { result: Evaluation | n
         <div className="stat"><small>Mass</small><b>{fmtMass(c.telemetry_and_4d.mass_kg)}</b><span>{result.material.name}</span></div>
         <div className="stat"><small>Volume</small><b>{vol.toFixed(vol < 10 ? 2 : 1)}</b><span>{settings.units === "in" ? "in³" : "cm³"}</span></div>
         <div className="stat size"><small>Size</small><b>{size.map((v) => Math.round(settings.units === "in" ? v / 25.4 : v)).join(" × ")}</b><span>{settings.units}</span></div>
-        <div className={`stat ${g.watertight ? "good" : "bad"}`}><small>Mesh</small><b>{g.watertight ? "Solid" : "Leaky"}</b><span>{g.watertight ? "watertight, ready to print" : "has gaps"}</span></div>
+        {(() => {
+          const holes = g.boundary_edges ?? (g.watertight ? 0 : 1), seams = g.nonmanifold_edges ?? 0;
+          return <div className={`stat ${holes ? "bad" : "good"}`}><small>Mesh</small><b>{holes ? "Has holes" : "Solid"}</b>
+            <span>{holes ? `${holes} open edges` : seams ? `closed · ${seams} touching edge${seams > 1 ? "s" : ""}` : "watertight, ready to print"}</span></div>;
+        })()}
       </div>
       <div className="section mono">
         <h3>Mass properties · {result.material.name}</h3>
@@ -43,7 +48,7 @@ export default function Inspector({ result, settings }: { result: Evaluation | n
         </div>
       </div>
 
-      <PrintEstimate volume={g.volume_mm3} area={g.area_mm2} height={size[2]} />
+      <PrintEstimate volume={g.volume_mm3} area={g.area_mm2} height={size[2]} settings={settings} />
 
       <div className="section mono">
         <h3>Checks</h3>
@@ -78,20 +83,16 @@ export default function Inspector({ result, settings }: { result: Evaluation | n
  * FDM estimate for a typical 0.4 mm nozzle, 0.2 mm layers, 2 perimeters + 4 top/bottom
  * layers (~0.9 mm skin) and 20 % infill in PLA. Skin is approximated as area x 0.9 mm.
  */
-function PrintEstimate({ volume, area, height }: { volume: number; area: number; height: number }) {
-  const skin = Math.min(volume, area * 0.9);
-  const printed = skin + (volume - skin) * 0.2;
-  const layers = Math.ceil(height / 0.2);
-  const seconds = printed / 7 + layers * 1.2;
-  const grams = (printed * 1.24) / 1000;
-  const h = Math.floor(seconds / 3600), m = Math.round((seconds % 3600) / 60);
+function PrintEstimate({ volume, area, height, settings }: { volume: number; area: number; height: number; settings: Settings }) {
+  const printer = printerOf(settings.printer), filament = filamentOf(settings.filament);
+  const e = printEstimate(volume, area, height, printer, filament);
   return (
     <div className="section mono">
-      <h3>3D print estimate · PLA, 0.2 mm, 20 % infill</h3>
-      <div className="kv"><span>Print time</span><span>{h > 0 ? `${h} h ${m} min` : `${m} min`}</span></div>
-      <div className="kv"><span>Filament</span><span>{grams.toFixed(1)} g · {(printed / (Math.PI * 0.8737 * 0.8737) / 1000).toFixed(2)} m</span></div>
-      <div className="kv"><span>Material cost</span><span>≈ ${(grams * 0.022).toFixed(2)} at $22/kg</span></div>
-      <div className="kv sub"><span>layers</span><span>{layers}</span></div>
+      <h3>Print estimate · {printer.label}, {filament.label}</h3>
+      <div className="kv"><span>Print time</span><span>{formatDuration(e.seconds)}</span></div>
+      <div className="kv"><span>Filament</span><span>{e.grams.toFixed(1)} g · {e.metres.toFixed(2)} m</span></div>
+      <div className="kv"><span>Material cost</span><span>≈ ${e.cost.toFixed(2)} at ${filament.usdPerKg}/kg</span></div>
+      <div className="kv sub"><span>layers · infill</span><span>{e.layers} × 0.2 mm · 20 %</span></div>
     </div>
   );
 }
