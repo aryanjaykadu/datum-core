@@ -60,6 +60,18 @@ pub fn log_line(level: String, message: String) {
     log(&level, &message);
 }
 
+/// Open a page of this project on GitHub (feedback, releases) in the default browser.
+/// Anything else is refused, so a compromised page cannot launch arbitrary URLs.
+#[tauri::command]
+pub fn open_url(url: String) -> Result<(), String> {
+    const ALLOWED: &str = "https://github.com/aryanjaykadu/datum-core/";
+    if !url.starts_with(ALLOWED) || url.chars().any(|c| c == '"' || c.is_control()) {
+        return Err("only Datum Core's GitHub pages can be opened".into());
+    }
+    // rundll32 hands the URL to the default browser without a shell parsing it
+    std::process::Command::new("rundll32").args(["url.dll,FileProtocolHandler", &url]).spawn().map(|_| ()).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub fn open_log_folder() -> Result<(), String> {
     std::process::Command::new("explorer").arg(data_dir().join("logs")).spawn().map(|_| ()).map_err(|e| e.to_string())

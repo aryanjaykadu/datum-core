@@ -86,6 +86,8 @@ export class Viewport {
   mode: DisplayMode = "shaded";
   /** Index into the shader's material looks (same order as the kernel's material table). */
   material = 0;
+  /** Adapter description for bug reports. */
+  gpuName = "";
   /** Theme colours (0..1) for the background and rim lights. */
   colours = { accent: [0, 0.85, 0.75], accent2: [0.95, 0.68, 0.25], bg: [0.035, 0.038, 0.05] };
   grid = true;
@@ -100,6 +102,8 @@ export class Viewport {
     if (!adapter) throw new Error("No WebGPU adapter was found (update the graphics driver).");
     const v = new Viewport(canvas);
     v.device = await adapter.requestDevice();
+    const ai = (adapter as unknown as { info?: { vendor?: string; architecture?: string; description?: string } }).info;
+    v.gpuName = [ai?.description, ai?.vendor, ai?.architecture].filter(Boolean).join(" ") || "unknown GPU";
     v.context = canvas.getContext("webgpu") as GPUCanvasContext;
     v.format = navigator.gpu.getPreferredCanvasFormat();
     v.context.configure({ device: v.device, format: v.format, alphaMode: "opaque" });

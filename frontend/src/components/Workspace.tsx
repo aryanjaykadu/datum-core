@@ -25,6 +25,9 @@ import RunLog, { type LogLine } from "./RunLog";
 import ToolRail from "./ToolRail";
 import StrengthPanel from "./StrengthPanel";
 import WorkflowBar from "./WorkflowBar";
+import Tour from "./Tour";
+import FeedbackDialog from "./FeedbackDialog";
+import UpdateBanner from "./UpdateBanner";
 import PrintDialog from "./PrintDialog";
 import ThemeQuick from "./ThemeQuick";
 import Icon from "./Icon";
@@ -70,6 +73,9 @@ export default function Workspace() {
   const [modeRequest, setModeRequest] = useState<{ mode: DisplayMode; n: number } | undefined>(undefined);
   const [showWelcome, setShowWelcome] = useState(false);
   const [version, setVersion] = useState<string>("");
+  const [showTour, setShowTour] = useState(false);
+  const [showFeedback, setShowFeedback] = useState(false);
+  const [updateCheck, setUpdateCheck] = useState(0);
   const togglePanel = (k: keyof typeof panels) => setPanels((p) => ({ ...p, [k]: !p[k] }));
   const [hover, setHover] = useState<PickResult | null>(null);
   const [, force] = useState(0);
@@ -209,6 +215,9 @@ export default function Workspace() {
         if (vp.current) vp.current.material = Math.max(0, ["al6061t6", "al7075t6", "ti64", "ss316", "s355", "pa12"].indexOf(docRef.current.material ?? ""));
         vp.current?.setScene(scene, r.geometry.bbox_min, r.geometry.bbox_max);
         if (fitNext.current) (fitNext.current = false, vp.current?.fit());
+        try {
+          if (!localStorage.getItem("datum.toured")) setTimeout(() => setShowTour(true), 900);
+        } catch {}
         // the triangle mesh keeps camera motion fluid (and is the whole view on low-end presets)
         const mesh = await kernel.mesh().catch(() => null);
         if (seq !== evalSeq.current) return;
@@ -533,6 +542,11 @@ export default function Workspace() {
       { label: "Settings…", shortcut: "Ctrl+,", action: () => setShowSettings(true) },
     ],
     Help: [
+      { label: "Take the tour", action: () => setShowTour(true) },
+      { label: "Send feedback…", action: () => setShowFeedback(true) },
+      { label: "Check for updates…", action: () => setUpdateCheck((n) => n + 1) },
+      { label: "Release notes", action: () => void support.openUrl("https://github.com/aryanjaykadu/datum-core/releases").catch(() => undefined) },
+      { separator: true },
       { label: "Welcome / getting started", action: () => setShowWelcome(true) },
       { label: "Keyboard shortcuts", action: () => setShowAbout(true) },
       { label: "Open log folder", action: () => void support.openLogs().catch(() => undefined) },
@@ -679,6 +693,10 @@ export default function Workspace() {
         <PrintDialog doc={doc} result={result} settings={settings} onSettings={updateSettings} onClose={() => setShowPrint(false)}
           onSend={() => { setShowPrint(false); void export3mf(true); }} onExport={() => { setShowPrint(false); void export3mf(false); }} />
       )}
+      {showTour && <Tour onDone={() => { setShowTour(false); try { localStorage.setItem("datum.toured", "1"); } catch {} }} />}
+      {showFeedback && <FeedbackDialog onClose={() => setShowFeedback(false)}
+        context={{ version: version || "dev", gpu: vp.current?.gpuName || "unknown GPU", part: doc.name ?? "untitled" }} />}
+      <UpdateBanner checkNow={updateCheck} onLog={(level, msg) => pushLog(level, "update", msg)} />
       <StatusBar hover={hover} result={result} settings={settings} busy={busy} error={error} path={path} locked={locked}
         dock={panels.dock ? dock : null} onDock={(d) => {
           if (d === null || (panels.dock && dock === d)) setPanels((p) => ({ ...p, dock: false }));

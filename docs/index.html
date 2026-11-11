@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Datum Core: strong, light, print-ready parts</title>
+<meta name="description" content="Free Windows app for designing 3D-printed parts that hold: check the stress, make them lighter with a stress-graded lattice, and send them to your slicer.">
+<style>
+  :root { --bg: #0b0c10; --panel: #14161c; --line: #23262f; --text: #ececee; --dim: #9a9ca6; --accent: #4fd1c5; --accent2: #f0b45a; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  a { color: var(--accent); }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 20px; }
+  header { display: flex; align-items: center; justify-content: space-between; padding: 18px 0; }
+  header b { font-size: 18px; letter-spacing: -0.01em; }
+  header nav a { color: var(--dim); text-decoration: none; margin-left: 20px; font-size: 14px; }
+  .hero { text-align: center; padding: 64px 0 40px; }
+  .hero h1 { font-size: clamp(32px, 5vw, 54px); line-height: 1.08; letter-spacing: -0.03em; margin: 0 0 16px; }
+  .hero h1 em { font-style: normal; color: var(--accent); }
+  .hero p { color: var(--dim); font-size: 18px; max-width: 640px; margin: 0 auto 28px; }
+  .cta { display: inline-flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+  .btn { display: inline-block; padding: 12px 22px; border-radius: 12px; font-weight: 600; text-decoration: none; border: 1px solid var(--line); color: var(--text); }
+  .btn.primary { background: var(--accent); color: #062521; border-color: var(--accent); }
+  .small { font-size: 13px; color: var(--dim); margin-top: 12px; }
+  .shot { margin: 36px 0 0; border-radius: 16px; overflow: hidden; border: 1px solid var(--line); box-shadow: 0 30px 80px -30px rgba(79, 209, 197, 0.35); }
+  .shot img { display: block; width: 100%; height: auto; }
+  h2 { font-size: 30px; letter-spacing: -0.02em; margin: 72px 0 10px; text-align: center; }
+  .sub { text-align: center; color: var(--dim); margin: 0 0 32px; }
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .step { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 20px; }
+  .step .n { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: #062521; font-weight: 700; font-size: 14px; }
+  .step h3 { margin: 10px 0 6px; font-size: 18px; }
+  .step p { margin: 0; color: var(--dim); font-size: 14.5px; }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; align-items: center; margin: 48px 0; }
+  .pair img { width: 100%; border-radius: 14px; border: 1px solid var(--line); }
+  .pair h3 { font-size: 24px; margin: 0 0 10px; letter-spacing: -0.01em; }
+  .pair p, .pair li { color: var(--dim); }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
+  .card b { display: block; margin-bottom: 4px; }
+  .card span { color: var(--dim); font-size: 14px; }
+  .honest { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--accent2); border-radius: 12px; padding: 18px 20px; margin: 48px 0; }
+  .honest b { color: var(--accent2); }
+  .honest ul { margin: 8px 0 0; padding-left: 20px; color: var(--dim); }
+  footer { border-top: 1px solid var(--line); margin-top: 72px; padding: 28px 0 40px; color: var(--dim); font-size: 13px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+  @media (max-width: 760px) {
+    .steps, .grid, .pair { grid-template-columns: 1fr; }
+    header nav a { margin-left: 12px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <b>Datum Core</b>
+    <nav><a href="#how">How it works</a><a href="https://github.com/aryanjaykadu/datum-core">GitHub</a><a href="https://github.com/aryanjaykadu/datum-core/issues/new/choose">Feedback</a></nav>
+  </header>
+
+  <section class="hero">
+    <h1>Print parts that <em>hold</em>,<br>with less plastic.</h1>
+    <p>Bring in a part, mark where it is bolted and where it is pushed, see where it is stressed, and make it lighter in one click. Then send it to your slicer.</p>
+    <div class="cta">
+      <a class="btn primary" href="https://github.com/aryanjaykadu/datum-core/releases/latest">Download for Windows</a>
+      <a class="btn" href="#how">See how it works</a>
+    </div>
+    <p class="small">Free and open source (MIT) · Windows 10/11 · works on integrated graphics</p>
+    <figure class="shot"><img src="img/workflow.webp" alt="A shelf bracket made 43 % lighter with a stress-graded lattice, still with a safety factor of 2.25" width="1600" height="1000"></figure>
+  </section>
+
+  <section id="how">
+    <h2>From part to print in six steps</h2>
+    <p class="sub">A step bar guides you; each step is one click.</p>
+    <div class="steps">
+      <div class="step"><span class="n">1</span><h3>Bring a part in</h3><p>Import STEP, STL or OBJ from any CAD or Printables, or start from a template (brackets, hooks, enclosures, gears).</p></div>
+      <div class="step"><span class="n">2</span><h3>Hold &amp; load</h3><p>Click where it is screwed down, then where the weight goes, e.g. 150 N for a 15 kg shelf.</p></div>
+      <div class="step"><span class="n">3</span><h3>Check the strength</h3><p>A finite-element analysis colours the part by stress and gives a safety factor in seconds.</p></div>
+      <div class="step"><span class="n">4</span><h3>Make it lighter</h3><p>The inside becomes a gyroid lattice: thick where it works hard, thin where it idles. Pick −20 % to −60 %.</p></div>
+      <div class="step"><span class="n">5</span><h3>Print check</h3><p>Thin walls and overhangs that need support, coloured right on the part.</p></div>
+      <div class="step"><span class="n">6</span><h3>Print</h3><p>Choose your printer and filament, check it fits the bed, see time, grams and cost, open it in your slicer.</p></div>
+    </div>
+  </section>
+
+  <section class="pair">
+    <img src="img/strength.webp" alt="Bearing block coloured by stress with a safety factor of 2.05" loading="lazy" width="1600" height="1000">
+    <div>
+      <h3>See where it will break, before you print it</h3>
+      <p>Datum Core runs a real stress analysis on the part itself: no meshing, no setup screens. Red is where it works hardest; the safety factor tells you whether it holds.</p>
+      <ul><li>Validated against beam theory in the test suite</li><li>Fixtures and loads are saved with the design</li></ul>
+    </div>
+  </section>
+
+  <section class="pair">
+    <div>
+      <h3>Lighter where it can be, solid where it must be</h3>
+      <p>"Make it lighter" keeps a solid skin and grades the lattice by the stress map, so you save plastic and print time without guessing infill. Walls never go below 0.6 mm, so they print with a normal nozzle.</p>
+      <ul><li>Shelf bracket: 35 g → 20 g, safety 2.97 → 2.25</li><li>Before / after shown automatically</li></ul>
+    </div>
+    <img src="img/template.webp" alt="Wall hook template with its load already set up" loading="lazy" width="1600" height="1000">
+  </section>
+
+  <h2>Everything a part needs</h2>
+  <p class="sub">The geometry is an exact field, so booleans, shells, blends and lattices never fail.</p>
+  <div class="grid">
+    <div class="card"><b>Sketch, extrude, revolve, loft</b><span>With fillets and dimensions</span></div>
+    <div class="card"><b>Standard parts</b><span>Gears, M3–M20 threads and holes, bearings, springs, beams</span></div>
+    <div class="card"><b>Print check</b><span>Wall thickness and overhangs</span></div>
+    <div class="card"><b>11 printer profiles</b><span>Bambu Lab, Prusa, Creality, Elegoo</span></div>
+    <div class="card"><b>3MF and STL</b><span>Compressed 3MF, opens in your slicer</span></div>
+    <div class="card"><b>Smooth on any PC</b><span>60 fps viewport, a mode for integrated graphics</span></div>
+  </div>
+
+  <div class="honest">
+    <b>Honest notes</b>
+    <ul>
+      <li>Stress results are a linear-elastic design guide, not certification. Real prints also depend on layer adhesion and print orientation.</li>
+      <li>The installer is not code-signed yet, so Windows SmartScreen warns: choose More info → Run anyway.</li>
+      <li>Imported parts are converted to an accurate field at the resolution you choose; they are not editable STEP features.</li>
+    </ul>
+  </div>
+
+  <section style="text-align:center">
+    <h2>Try it on your next print</h2>
+    <p class="sub">And tell us what got in your way: it shapes what comes next.</p>
+    <div class="cta">
+      <a class="btn primary" href="https://github.com/aryanjaykadu/datum-core/releases/latest">Download for Windows</a>
+      <a class="btn" href="https://github.com/aryanjaykadu/datum-core/issues/new/choose">Send feedback</a>
+    </div>
+  </section>
+
+  <footer>
+    <span>Datum Core · MIT License</span>
+    <span><a href="https://github.com/aryanjaykadu/datum-core">Source</a> · <a href="https://github.com/aryanjaykadu/datum-core/releases">Releases</a></span>
+  </footer>
+</div>
+</body>
+</html>

@@ -40,6 +40,8 @@ fn main() {
         }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_window_state::Builder::default().build())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .manage(engine::Engine::new())
         .manage(commands::LaunchFile(Mutex::new(launch_file)))
         .manage(commands::Protection(Mutex::new(false)))
@@ -59,6 +61,7 @@ fn main() {
             support::log_line,
             support::open_log_folder,
             support::app_info,
+            support::open_url,
             exports::export_dir,
             exports::stl_to_3mf,
             exports::save_png,

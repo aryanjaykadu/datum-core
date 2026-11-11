@@ -173,6 +173,7 @@ export const support = {
   log: (level: string, message: string) => invoke<void>("log_line", { level, message }),
   openLogs: () => invoke<void>("open_log_folder"),
   info: () => invoke<{ name: string; version: string; tauri: string; data_dir: string }>("app_info"),
+  openUrl: (url: string) => invoke<void>("open_url", { url }),
 };
 
 export const exporter = {

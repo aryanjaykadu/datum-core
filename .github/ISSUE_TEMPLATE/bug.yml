@@ -1,0 +1,24 @@
+name: Something went wrong
+description: A crash, a wrong result, or something that does not work as expected
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: Steps to reproduce help a lot. Attach the .datum or STEP file if you can share it.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect instead?
+  - type: input
+    id: version
+    attributes:
+      label: Datum Core version
+      placeholder: Help → About shows it, e.g. 2.0.0
+  - type: input
+    id: gpu
+    attributes:
+      label: Graphics card (optional)

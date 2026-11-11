@@ -71,6 +71,27 @@ cd src-tauri && cargo test --release                             # .datum encryp
 - The Performance preset (Settings → Viewport) uses the mesh all the time, without shadows, glass blur or animation: suited to integrated graphics.
 - Section, X-ray, normals and manufacturability views always use the exact field.
 
+## Ready for testers (v2.0)
+
+- **Auto-update**: the app checks GitHub a few seconds after start and offers signed updates (Install & restart). Help → Check for updates checks on demand. Updates are verified against the public key in `tauri.conf.json`.
+- **First-run tour** over the step bar, tool rail, Strength tab, view controls and search (Help → Take the tour).
+- **Send feedback** (Help): opens a pre-filled GitHub issue in the browser; nothing is sent from the app. Issue templates live in `.github/ISSUE_TEMPLATE`.
+- **Website**: `docs/index.html`, ready for GitHub Pages (Settings → Pages → Deploy from branch `main`, folder `/docs`).
+
+### Releasing an update
+
+The update signing key is kept outside the repository (`%USERPROFILE%\.datum-core-signing`). Back it up: without it, existing installs cannot be updated.
+
+```powershell
+$k = "$env:USERPROFILE\.datum-core-signing"
+$env:TAURI_SIGNING_PRIVATE_KEY = Get-Content "$k\updater.key" -Raw
+$env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = Get-Content "$k\password.txt" -Raw
+npx tauri build --bundles msi
+python ..\tools\release_files.py 2.0.1 "What changed" ..\release
+```
+
+Upload everything in `release/` (MSI, `.sig`, `latest.json`) to the GitHub release `v2.0.1`.
+
 ## Design to print (v1.9)
 
 - **Step bar** over the 3D view: Part → Hold & load → Check → Lighten (optional) → Print check → Print. Each step shows done / next, and one click goes there.

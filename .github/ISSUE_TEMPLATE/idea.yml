@@ -1,0 +1,15 @@
+name: An idea
+description: A feature or change that would help you design or print
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like to do?
+      description: Describe the job you are trying to get done, not only the feature.
+    validations:
+      required: true
+  - type: textarea
+    id: today
+    attributes:
+      label: How do you do it today?
