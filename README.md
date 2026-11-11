@@ -57,6 +57,13 @@ cd src-tauri && cargo test --release                             # .datum encryp
 - **Templates** (File → New from template, Ctrl+Shift+N): 12 starters across the four disciplines.
 - **Performance presets** (Settings → Viewport): Auto adapts resolution to hold the frame rate; Performance suits low-end PCs (fewer pixels, no shadows, no glass blur or animation).
 
+## Personalise and interact (v1.3)
+
+- **Themes** (Settings → Appearance): Midnight Teal, Graphite, Deep Ocean, Aurora, Ember, Forest, Rose Gold, Neon, plus a custom accent colour. The 3D viewport's background and lights follow the theme.
+- **Sound packs** (Settings → Sound): Studio Guitar, Soft, Mechanical, Sci-Fi, Chiptune, Marimba, with volume. All synthesised, no audio files.
+- **Click to select**: click a face in the viewport to select the feature that made it (a hole wall selects the hole).
+- **Robot jogging**: move the tool ±X/Y/Z by a step, or click a point on the part to send it there (damped least-squares inverse kinematics within joint limits).
+
 ## Sketch and import
 
 - **Sketch → Extrude / Revolve**: edit the profile in the property panel (drag points, `+` to insert, per-point fillet radius). The profile becomes an exact signed-distance field.

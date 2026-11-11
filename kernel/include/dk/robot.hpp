@@ -61,6 +61,12 @@ std::vector<LinkPoint> chain_polyline(const Robot& r, const std::vector<double>&
 // 6xN geometric Jacobian, rows 0-2 linear (divided by `length_scale`), rows 3-5 angular.
 std::vector<double> jacobian(const Robot& r, const std::vector<Frame>& frames, double length_scale);
 
+// Position inverse kinematics: joint angles that put the tool flange at `target` (relative to
+// the base origin, mm), starting from `q0` and respecting joint limits. Damped least squares,
+// so it degrades gracefully near singularities and stops at the closest reachable point.
+struct IkResult { std::vector<double> q; double error_mm = 0; bool reached = false; int iterations = 0; };
+IkResult inverse_kinematics(const Robot& r, std::vector<double> q0, Vec3 target, double tolerance_mm = 0.5);
+
 // Inverse condition number of an m x n matrix (row-major), via eigenvalues of J J^T.
 // With `rank` > 0, only the `rank` largest singular values count: an arm whose motion is
 // confined to fewer directions (a planar arm) is judged within the directions it has.

@@ -62,6 +62,8 @@ export class Viewport {
   mode: DisplayMode = "shaded";
   /** Index into the shader's material looks (same order as the kernel's material table). */
   material = 0;
+  /** Theme colours (0..1) for the background and rim lights. */
+  colours = { accent: [0, 0.85, 0.75], accent2: [0.95, 0.68, 0.25], bg: [0.035, 0.038, 0.05] };
   grid = true;
   section: Section = { axis: "off", offset: 0, flip: false };
   onFrame?: (ms: number, width: number, height: number) => void;
@@ -77,7 +79,7 @@ export class Viewport {
     v.context = canvas.getContext("webgpu") as GPUCanvasContext;
     v.format = navigator.gpu.getPreferredCanvasFormat();
     v.context.configure({ device: v.device, format: v.format, alphaMode: "opaque" });
-    v.uniform = v.device.createBuffer({ size: 160, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    v.uniform = v.device.createBuffer({ size: 208, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     v.pickBuffer = v.device.createBuffer({ size: 48, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
     v.pickRead = v.device.createBuffer({ size: 48, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
     return v;
@@ -365,6 +367,7 @@ export class Viewport {
       axis[0] * sign, axis[1] * sign, axis[2] * sign, sec.offset * sign,
       this.grid ? 1 : 0, pickX, pickY, 0,
       ...this.lensShift(), this.interacting || !this.perf.shadows ? 0 : 1, 0,
+      ...this.colours.accent, 1, ...this.colours.accent2, 1, ...this.colours.bg, 1,
     ]));
   }
 

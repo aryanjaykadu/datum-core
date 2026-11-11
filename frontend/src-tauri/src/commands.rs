@@ -13,7 +13,7 @@ pub struct LaunchFile(pub Mutex<Option<String>>);
 pub struct Protection(pub Mutex<bool>);
 
 /// Methods the UI may call directly; anything else is refused.
-const METHODS: &[&str] = &["catalog", "example", "quote", "export_stl", "robot_fk", "ping"];
+const METHODS: &[&str] = &["catalog", "example", "quote", "export_stl", "robot_fk", "robot_ik", "feature_at", "ping"];
 
 async fn call(app: AppHandle, method: &'static str, params: Value) -> Result<crate::engine::Reply, String> {
     tauri::async_runtime::spawn_blocking(move || app.state::<Engine>().call(&app, method, params))

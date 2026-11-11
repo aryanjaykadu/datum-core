@@ -385,6 +385,36 @@ BuildResult build_document(Graph& g, const json& doc) {
     return out;
 }
 
+std::string feature_at(const json& doc, Vec3 p, double tol) {
+    Graph g;
+    BuildResult built = build_document(g, doc);
+    // depth = number of features upstream (transitively), from the inputs lists
+    std::map<std::string, std::vector<std::string>> inputs;
+    for (auto& f : built.features) inputs[f.id] = f.inputs;
+    std::map<std::string, size_t> depth;
+    std::function<size_t(const std::string&)> up = [&](const std::string& id) -> size_t {
+        if (auto it = depth.find(id); it != depth.end()) return it->second;
+        depth[id] = 0;  // guards cycles (build_document already rejects them)
+        size_t d = 0;
+        for (auto& i : inputs[id]) d += 1 + up(i);
+        return depth[id] = d;
+    };
+    Builder b{g, &doc, {}, {}, {}, {}, {}, {}};
+    for (auto& f : doc.at("features")) b.by_id.emplace(f.value("id", std::string()), &f);
+    b.build(doc.value("root", built.features.back().id), coords(g));
+    std::string best;
+    size_t best_depth = SIZE_MAX;
+    double best_d = 1e300;
+    for (auto& f : built.features) {
+        if (f.suppressed || !b.evaluated.count(f.id)) continue;
+        double d = std::abs(compile(b.build(f.id, coords(g)))(p));
+        if (d > tol) continue;
+        size_t k = up(f.id);
+        if (k < best_depth || (k == best_depth && d < best_d)) best = f.id, best_depth = k, best_d = d;
+    }
+    return best;
+}
+
 json feature_catalog() {
     auto vec3 = [](const char* label, json def) { return json{{"kind", "vec3"}, {"label", label}, {"default", def}}; };
     auto number = [](const char* label, double def, double min, const char* unit = "mm") {

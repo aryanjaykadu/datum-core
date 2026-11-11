@@ -116,6 +116,10 @@ export const kernel = {
   robotFk: (preset: string, qDeg: number[], robot?: import("./urdf").RobotDef) =>
     invoke<{ tool: Vec3; tool_z: Vec3; joints: Vec3[]; dof: number; reach_mm: number; dexterity: number }>("engine_call", {
       method: "robot_fk", params: robot ? { robot, q_deg: qDeg } : { preset, q_deg: qDeg } }),
+  robotIk: (preset: string, qDeg: number[], target: Vec3, base: Vec3, robot?: import("./urdf").RobotDef) =>
+    invoke<{ q_deg: number[]; error_mm: number; reached: boolean; iterations: number }>("engine_call", {
+      method: "robot_ik", params: { ...(robot ? { robot } : { preset }), q_deg: qDeg, target, base } }),
+  featureAt: (point: Vec3) => invoke<{ feature: string }>("engine_call", { method: "feature_at", params: { point } }),
   exportStl: (path: string) => invoke<{ path: string; triangles: number }>("engine_call", { method: "export_stl", params: { path } }),
 };
 

@@ -16,11 +16,17 @@ export interface Settings {
   /** Simple shows a short, explained tool set; Pro shows everything. */
   mode: "simple" | "pro";
   workspace: "all" | "mechanical" | "robotics" | "automotive" | "aerospace";
+  theme: string;
+  /** "" = the theme's own accent */
+  accent: string;
+  soundPack: "guitar" | "soft" | "mechanical" | "scifi" | "chiptune" | "marimba";
+  volume: number;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
   units: "mm", quality: "draft", bricks: 24, sound: true, grid: true, annotations: true, orthographic: false, decimals: 2,
   performance: "auto", mode: "pro", workspace: "all",
+  theme: "midnight", accent: "", soundPack: "guitar", volume: 0.6,
 };
 
 const KEY = "datum.settings.v1";

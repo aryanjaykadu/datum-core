@@ -1,12 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { click, reject, setSoundEnabled, validate } from "@/lib/audio";
+import { click, reject, setSoundEnabled, setSoundPack, setVolume, validate } from "@/lib/audio";
+import { applyTheme, resolveTheme, viewportColours } from "@/lib/themes";
 import { deleteFeature, emptyDocument, History, insertFeature, updateFeature, type Operation } from "@/lib/document";
 import type { PickResult, Viewport } from "@/lib/gpu";
 import {
   confirmDialog, files, importCad, isTauri, kernel, listen, pickImportFile, pickOpenPath, pickSavePath, setWindowTitle, support, windowAction,
-  type Catalog, type DatumDocument, type Evaluation, type Feature, exporter,
+  type Catalog, type DatumDocument, type Vec3, type Evaluation, type Feature, exporter,
 } from "@/lib/ipc";
 import { TEMPLATES } from "@/lib/templates";
 import { resolveDocument } from "@/lib/params";
@@ -33,6 +34,9 @@ const basename = (p: string | null) => (p ? p.split(/[\\/]/).pop()! : null);
 
 export default function Workspace() {
   const [settings, updateSettings] = useSettings();
+  const robotPick = useRef<((p: Vec3) => void) | null>(null);
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [doc, setDoc] = useState<DatumDocument>(emptyDocument);
   const [result, setResult] = useState<Evaluation | null>(null);
@@ -156,6 +160,14 @@ export default function Workspace() {
   }, []);
 
   useEffect(() => setSoundEnabled(settings.sound), [settings.sound]);
+  useEffect(() => setSoundPack(settings.soundPack), [settings.soundPack]);
+  useEffect(() => setVolume(settings.volume), [settings.volume]);
+  // colour theme: CSS variables now, viewport colours on the next frame
+  useEffect(() => {
+    const t = resolveTheme(settings.theme, settings.accent);
+    applyTheme(t);
+    if (vp.current) (vp.current.colours = viewportColours(t), vp.current.request());
+  }, [settings.theme, settings.accent]);
   // autosave a few seconds after each change while there are unsaved edits
   useEffect(() => {
     if (!dirty || !isTauri() || doc.features.length === 0) return;
@@ -544,7 +556,16 @@ export default function Workspace() {
         onToggle={(id) => patchFeature(id, { suppressed: !doc.features.find((f) => f.id === id)?.suppressed })} />
 
       <ViewportPanel insets={{ left: panels.tree ? 276 : 0, right: panels.inspector ? 346 : 0, top: 120, bottom: panels.dock ? 262 : 36 }}
-        onReady={(v) => (vp.current = v)} markers={markers} settings={settings} onSettings={updateSettings}
+        onReady={(v) => { vp.current = v; v.colours = viewportColours(resolveTheme(settingsRef.current.theme, settingsRef.current.accent)); }} markers={markers} settings={settings} onSettings={updateSettings}
+        onPickPoint={(hit) => {
+          if (robotPick.current && rightTab === "robotics") return robotPick.current(hit.position);
+          kernel.featureAt(hit.position).then((r) => {
+            if (!r.feature) return;
+            click(262, 0.35);
+            setSelected(r.feature);
+            setRightTab("properties");
+          }).catch(() => undefined);
+        }}
         onHover={setHover} onError={(m) => pushLog("error", "gpu", m)} empty={doc.features.length === 0} busy={busy} />
 
       <aside className="glass area-inspector scroll">
@@ -564,7 +585,8 @@ export default function Workspace() {
         {rightTab === "robotics" && (
           <RoboticsPanel doc={doc} catalog={catalog} viewport={vp.current} onPatch={patchFeature}
             onDocChange={(p) => commit({ ...docRef.current, ...p })}
-            onInsert={(t) => insert(t, doc.features.length ? "add" : "new", undefined, true)} onLog={(level, msg) => pushLog(level, "robotics", msg)} />
+            onInsert={(t) => insert(t, doc.features.length ? "add" : "new", undefined, true)} onLog={(level, msg) => pushLog(level, "robotics", msg)}
+            setPickHandler={(h) => (robotPick.current = h)} />
         )}
       </aside>
 

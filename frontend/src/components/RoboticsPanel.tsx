@@ -12,7 +12,7 @@ const DH_COLUMNS: [string, string][] = [["d", "d mm"], ["a", "a mm"], ["alpha_de
  * Robotics workspace module: choose or define an arm (presets, DH table, URDF import), pose
  * it joint by joint, then compute its reachable envelope and kinematic lock zones.
  */
-export default function RoboticsPanel({ doc, catalog, viewport, onPatch, onDocChange, onInsert, onLog }: {
+export default function RoboticsPanel({ doc, catalog, viewport, onPatch, onDocChange, onInsert, onLog, setPickHandler }: {
   doc: DatumDocument;
   catalog: Catalog | null;
   viewport: Viewport | null;
@@ -20,6 +20,8 @@ export default function RoboticsPanel({ doc, catalog, viewport, onPatch, onDocCh
   onDocChange: (patch: Partial<DatumDocument>) => void;
   onInsert: (type: string) => void;
   onLog: (level: "info" | "warn" | "error", msg: string) => void;
+  /** While set, a click on the part sends its point here instead of selecting a feature. */
+  setPickHandler: (h: ((p: Vec3) => void) | null) => void;
 }) {
   const arms = doc.features.filter((f) => f.type === "robot_arm" && !f.suppressed);
   const [armId, setArmId] = useState<string | null>(null);
@@ -34,6 +36,9 @@ export default function RoboticsPanel({ doc, catalog, viewport, onPatch, onDocCh
   const [floor, setFloor] = useState(true);
   const [editTable, setEditTable] = useState(false);
   const [tcp, setTcp] = useState<{ tool: Vec3; dexterity: number } | null>(null);
+  const [jog, setJog] = useState(20);
+  const [targeting, setTargeting] = useState(false);
+  const [ikNote, setIkNote] = useState<string | null>(null);
 
   useEffect(() => {
     if (!viewport) return;
@@ -119,6 +124,27 @@ export default function RoboticsPanel({ doc, catalog, viewport, onPatch, onDocCh
     next[i] = v;
     const padded = [...next, 0, 0, 0, 0, 0, 0];
     onPatch(arm.id, { params: { ...arm.params, joints_a: padded.slice(0, 3), joints_b: padded.slice(3, 6), joints_more: next.slice(6) } });
+  };
+  const setAll = (next: number[]) => {
+    const padded = [...next, 0, 0, 0, 0, 0, 0];
+    onPatch(arm.id, { params: { ...arm.params, joints_a: padded.slice(0, 3), joints_b: padded.slice(3, 6), joints_more: next.slice(6) } });
+  };
+  /** Inverse kinematics: move the tool flange to a world point (mm), starting from the current pose. */
+  const moveTool = async (target: Vec3) => {
+    try {
+      const r = await kernel.robotIk(preset, q, target, center, custom);
+      setAll(r.q_deg.map((v) => Math.round(v * 10) / 10));
+      setIkNote(r.reached ? null : `Out of reach: stopped ${r.error_mm.toFixed(1)} mm short of the target.`);
+      if (r.reached) click(294, 0.35);
+    } catch (e) {
+      onLog("error", String(e));
+    }
+  };
+  const jogBy = (axis: number, sign: number) => {
+    if (!tcp) return;
+    const t = [...tcp.tool] as Vec3;
+    t[axis] += sign * jog;
+    void moveTool(t);
   };
   const setCustom = (def: RobotDef) => onDocChange({ robots: { ...(doc.robots ?? {}), [preset]: def } });
 
@@ -218,6 +244,24 @@ export default function RoboticsPanel({ doc, catalog, viewport, onPatch, onDocCh
       )}
 
       <div className="section">
+        <h3>Move the tool</h3>
+        <div className="jog">
+          {(["X", "Y", "Z"] as const).map((a, i) => (
+            <div key={a} className="jog-axis">
+              <button className="btn" disabled={!tcp} onClick={() => jogBy(i, -1)} title={`Move the tool ${jog} mm along -${a}`}>−{a}</button>
+              <button className="btn" disabled={!tcp} onClick={() => jogBy(i, +1)} title={`Move the tool ${jog} mm along +${a}`}>+{a}</button>
+            </div>
+          ))}
+          <select value={jog} onChange={(e) => setJog(Number(e.target.value))} title="Jog step">
+            {[1, 5, 20, 50, 100].map((s) => <option key={s} value={s}>{s} mm</option>)}
+          </select>
+        </div>
+        <button className={`btn wide${targeting ? " primary" : ""}`} onClick={() => {
+          const on = !targeting;
+          setTargeting(on);
+          setPickHandler(on ? (p) => void moveTool(p) : null);
+        }}>{targeting ? "Click the part to send the tool there (click again to stop)" : "Move tool to a point on the part…"}</button>
+        {ikNote && <div className="note bad">{ikNote}</div>}
         <h3>Joint pose</h3>
         {tcp && (
           <div className="mono" style={{ marginBottom: 6 }}>

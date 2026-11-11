@@ -14,7 +14,7 @@ const VIEW_BUTTONS: [ViewName, string, string][] = [
   ["right", "Right", "4"], ["top", "Top", "5"], ["bottom", "Bottom", "6"],
 ];
 
-export default function ViewportPanel({ insets, onReady, markers, settings, onSettings, onHover, onError, empty, busy }: {
+export default function ViewportPanel({ insets, onReady, markers, settings, onSettings, onHover, onError, empty, busy, onPickPoint }: {
   insets: { left: number; right: number; top: number; bottom: number };
   onReady: (v: Viewport) => void;
   markers: Marker[];
@@ -24,6 +24,8 @@ export default function ViewportPanel({ insets, onReady, markers, settings, onSe
   onError: (msg: string) => void;
   empty: boolean;
   busy: boolean;
+  /** A plain click on the part (not measuring): the surface point. */
+  onPickPoint?: (p: PickResult) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const vpRef = useRef<Viewport | null>(null);
@@ -128,9 +130,13 @@ export default function ViewportPanel({ insets, onReady, markers, settings, onSe
       const wasClick = drag && !drag.moved && e.button === 0;
       if (drag?.moved && !drag.pan) vpRef.current?.release();
       drag = null;
-      if (!wasClick || !measureRef.current) return;
+      if (!wasClick) return;
       const r = canvas.getBoundingClientRect();
       const hit = await vpRef.current?.pick(e.clientX - r.left, e.clientY - r.top);
+      if (!measureRef.current) {
+        if (hit && !hit.cap) pickRef.current?.(hit);
+        return;
+      }
       if (!hit) return;
       click(330, 0.4);
       setPoints((p) => (p.length >= 2 ? [hit.position] : [...p, hit.position]));
@@ -164,6 +170,8 @@ export default function ViewportPanel({ insets, onReady, markers, settings, onSe
       ro.disconnect();
     };
   }, [onHover]);
+  const pickRef = useRef(onPickPoint);
+  pickRef.current = onPickPoint;
   const measureRef = useRef(measure);
   measureRef.current = measure;
 

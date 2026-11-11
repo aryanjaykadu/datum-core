@@ -42,6 +42,11 @@ struct BuildResult {
 // (unknown type, missing input, cycle, bad parameter).
 BuildResult build_document(Graph& g, const json& doc);
 
+// The feature whose own surface passes through `p` (within `tol` mm), preferring the one with
+// the fewest upstream features: clicking a hole wall picks the hole, not the body it cuts.
+// Empty when no feature's surface is there. Only features the root uses are considered.
+std::string feature_at(const json& doc, Vec3 p, double tol);
+
 // Feature types the UI can offer, with their parameter schema (for the property editor).
 json feature_catalog();
 

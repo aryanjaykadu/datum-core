@@ -130,6 +130,77 @@ std::vector<double> jacobian(const Robot& r, const std::vector<Frame>& frames, d
     return J;
 }
 
+static IkResult ik_from(const Robot& r, std::vector<double> q, Vec3 target, double tol) {
+    const size_t n = r.joints.size();
+    q.resize(n, 0.0);
+    for (size_t i = 0; i < n; ++i) q[i] = std::clamp(q[i], r.joints[i].lo, r.joints[i].hi);
+    IkResult out;
+    const double reach = std::max(r.reach(), 1.0);
+    double lambda = 0.02 * reach;  // damping (mm): smooth near singularities
+    double err = 1e300;
+    for (int it = 0; it < 400; ++it) {
+        auto frames = forward_kinematics(r, q);
+        Vec3 e = target - frames.back().o;
+        err = std::sqrt(dot(e, e));
+        out.iterations = it;
+        if (err < tol) break;
+        auto J6 = jacobian(r, frames, 1.0);  // rows 0-2: mm per rad
+        // A = J J^T + lambda^2 I (3x3), solve A y = e, dq = J^T y
+        double A[3][3] = {};
+        for (int a = 0; a < 3; ++a)
+            for (int b = 0; b < 3; ++b) {
+                for (size_t i = 0; i < n; ++i) A[a][b] += J6[a * n + i] * J6[b * n + i];
+                if (a == b) A[a][b] += lambda * lambda;
+            }
+        double det = A[0][0] * (A[1][1] * A[2][2] - A[1][2] * A[2][1]) - A[0][1] * (A[1][0] * A[2][2] - A[1][2] * A[2][0]) + A[0][2] * (A[1][0] * A[2][1] - A[1][1] * A[2][0]);
+        if (std::abs(det) < 1e-300) break;
+        double inv[3][3] = {
+            {(A[1][1] * A[2][2] - A[1][2] * A[2][1]) / det, (A[0][2] * A[2][1] - A[0][1] * A[2][2]) / det, (A[0][1] * A[1][2] - A[0][2] * A[1][1]) / det},
+            {(A[1][2] * A[2][0] - A[1][0] * A[2][2]) / det, (A[0][0] * A[2][2] - A[0][2] * A[2][0]) / det, (A[0][2] * A[1][0] - A[0][0] * A[1][2]) / det},
+            {(A[1][0] * A[2][1] - A[1][1] * A[2][0]) / det, (A[0][1] * A[2][0] - A[0][0] * A[2][1]) / det, (A[0][0] * A[1][1] - A[0][1] * A[1][0]) / det}};
+        double y[3] = {};
+        for (int a = 0; a < 3; ++a) y[a] = inv[a][0] * e.x + inv[a][1] * e.y + inv[a][2] * e.z;
+        std::vector<double> dq(n);
+        double biggest = 0;
+        for (size_t i = 0; i < n; ++i) {
+            dq[i] = J6[0 * n + i] * y[0] + J6[1 * n + i] * y[1] + J6[2 * n + i] * y[2];
+            biggest = std::max(biggest, std::abs(dq[i]));
+        }
+        double scale = biggest > 0.2 ? 0.2 / biggest : 1.0;  // at most ~11 deg per step
+        std::vector<double> trial(n);
+        for (size_t i = 0; i < n; ++i) trial[i] = std::clamp(q[i] + dq[i] * scale, r.joints[i].lo, r.joints[i].hi);
+        Vec3 e2 = target - forward_kinematics(r, trial).back().o;
+        if (dot(e2, e2) < err * err) {
+            q = trial;
+            lambda = std::max(lambda * 0.7, 1e-3 * reach);
+        } else {
+            lambda = std::min(lambda * 2.5, reach);  // overshoot: damp harder and retry
+        }
+    }
+    out.q = q;
+    Vec3 e = target - forward_kinematics(r, q).back().o;  // the pose actually returned
+    out.error_mm = std::sqrt(dot(e, e));
+    out.reached = out.error_mm < tol;
+    return out;
+}
+
+IkResult inverse_kinematics(const Robot& r, std::vector<double> q0, Vec3 target, double tol) {
+    // from the current pose first (smallest motion), then from a fixed set of spread-out
+    // poses: damped least squares can stall in a local minimum near a joint limit
+    IkResult best = ik_from(r, q0, target, tol);
+    std::mt19937 rng(1234);
+    std::uniform_real_distribution<double> u(0.1, 0.9);
+    for (int k = 0; k < 12 && !best.reached; ++k) {
+        std::vector<double> seed(r.joints.size());
+        for (size_t i = 0; i < seed.size(); ++i) seed[i] = r.joints[i].lo + (r.joints[i].hi - r.joints[i].lo) * u(rng);
+        IkResult t = ik_from(r, seed, target, tol);
+        // a restart means a large jump in pose: take it only if it reaches the target or is clearly
+        // closer (an unreachable jog should stop near the current pose, not leap across the workspace)
+        if (t.reached || t.error_mm < best.error_mm - std::max(5.0, 0.2 * best.error_mm)) best = t;
+    }
+    return best;
+}
+
 // eigenvalues of a symmetric n x n matrix (cyclic Jacobi), in place
 static std::vector<double> sym_eigenvalues(std::vector<double> a, int n) {
     for (int sweep = 0; sweep < 60; ++sweep) {

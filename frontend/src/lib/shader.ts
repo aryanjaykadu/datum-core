@@ -12,6 +12,9 @@ struct Uniforms {
   section: vec4f,  // plane normal xyz (0 = off), offset: keep dot(p, n) <= w
   misc: vec4f,     // grid on, pick x, pick y, unused
   shift: vec4f,    // lens shift (NDC) x, y to centre the open area; z = high quality (shadows)
+  accent: vec4f,   // theme accent (cool rim light, bloom)
+  accent2: vec4f,  // theme secondary accent (warm rim light, bloom)
+  bg: vec4f,       // theme canvas colour
 };
 struct Instr { op: u32, a: u32, b: u32, c: f32 };
 struct PickOut { pos: vec4f, normal: vec4f, probe: vec4f };
@@ -291,9 +294,9 @@ fn shade(frag: vec4f) -> vec4f {
   let uv = (frag.xy / U.view.xy) * 2.0 - 1.0 - U.shift.xy;
   let hq = U.shift.z > 0.5;
   // canvas with teal / gold ambient blooms
-  var col = vec3f(0.035, 0.038, 0.050);
-  col += vec3f(0.0, 0.85, 0.75) * 0.075 * exp(-2.2 * dot(uv - vec2f(-0.75, -0.55), uv - vec2f(-0.75, -0.55)));
-  col += vec3f(0.95, 0.68, 0.25) * 0.060 * exp(-2.2 * dot(uv - vec2f(0.85, -0.65), uv - vec2f(0.85, -0.65)));
+  var col = U.bg.xyz;
+  col += U.accent.xyz * 0.075 * exp(-2.2 * dot(uv - vec2f(-0.75, -0.55), uv - vec2f(-0.75, -0.55)));
+  col += U.accent2.xyz * 0.060 * exp(-2.2 * dot(uv - vec2f(0.85, -0.65), uv - vec2f(0.85, -0.65)));
   col += vec3f(0.30, 0.35, 0.45) * 0.035 * exp(-1.5 * dot(uv - vec2f(0.0, 0.9), uv - vec2f(0.0, 0.9)));
 
   var tfloor = FAR;
@@ -342,8 +345,8 @@ fn shade(frag: vec4f) -> vec4f {
     col += environment(normalize(mix(r, n, rough * rough))) * fres * occ;
     col += base * (1.0 - metal) * environment(n) * 0.35 * occ;
     // rim lights
-    col += vec3f(0.0, 0.85, 0.75) * 0.22 * pow(1.0 - abs(dot(n, v)), 3.0) * max(-n.x, 0.0) * occ;
-    col += vec3f(0.95, 0.68, 0.25) * 0.18 * pow(1.0 - abs(dot(n, v)), 3.0) * max(n.x, 0.0) * occ;
+    col += U.accent.xyz * 0.22 * pow(1.0 - abs(dot(n, v)), 3.0) * max(-n.x, 0.0) * occ;
+    col += U.accent2.xyz * 0.18 * pow(1.0 - abs(dot(n, v)), 3.0) * max(n.x, 0.0) * occ;
   } else if (tfloor < FAR) {
     let p = ro + rd * tfloor;
     g_depth = view_depth(p);

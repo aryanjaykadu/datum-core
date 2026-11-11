@@ -51,6 +51,7 @@ struct Session {
     MassProperties mp;
     Vec3 lo, hi;
     std::string material = "al6061t6";
+    json doc;  // the evaluated document (for feature picking)
     Accessibility access;
     bool ready = false;
 };
@@ -178,6 +179,7 @@ json evaluate(Session& s, const json& params) {
 
     auto graph = std::make_unique<Graph>();
     BuildResult built = build_document(*graph, doc);
+    s.doc = doc;
     Program f = compile(built.root);
     double t_build = ms();
 
@@ -320,7 +322,13 @@ int main() {
             else if (method == "catalog") write_response({{"id", id}, {"result", catalog()}});
             else if (method == "example") write_response({{"id", id}, {"result", example_bracket()}});
             else if (method == "quote") write_response({{"id", id}, {"result", quote(session, params)}});
-            else if (method == "scene") {
+            else if (method == "feature_at") {
+                if (!session.ready) throw std::runtime_error("evaluate a document first");
+                json pt = params.at("point");
+                double span = std::max({session.hi.x - session.lo.x, session.hi.y - session.lo.y, session.hi.z - session.lo.z});
+                std::string fid = feature_at(session.doc, {pt[0].get<double>(), pt[1].get<double>(), pt[2].get<double>()}, std::max(0.05, 0.004 * span));
+                write_response({{"id", id}, {"result", {{"feature", fid}}}});
+            } else if (method == "scene") {
                 if (!session.ready) throw std::runtime_error("evaluate a document first");
                 Vec3 c = (session.lo + session.hi) * 0.5;
                 double half = 0.5 * std::max({session.hi.x - session.lo.x, session.hi.y - session.lo.y, session.hi.z - session.lo.z}) * 1.04;
@@ -364,6 +372,17 @@ int main() {
                 J.resize(3 * r.joints.size());
                 write_response({{"id", id}, {"result", {{"tool", {t.o.x, t.o.y, t.o.z}}, {"tool_z", {t.z.x, t.z.y, t.z.z}}, {"joints", joints},
                     {"dof", r.joints.size()}, {"reach_mm", r.reach()}, {"dexterity", inverse_condition(J, 3, int(r.joints.size()), 0)}}}});
+            } else if (method == "robot_ik") {
+                // joint angles (deg) that bring the flange to a world point, from the current pose
+                Robot r = params.contains("robot") ? robot_from_json(params["robot"]) : robot_preset(params.value("preset", std::string("ur5")));
+                std::vector<double> q;
+                for (auto& v : params.value("q_deg", json::array())) q.push_back(v.get<double>() * std::numbers::pi / 180.0);
+                json t = params.at("target"), b = params.value("base", json::array({0, 0, 0}));
+                Vec3 target{t[0].get<double>() - b[0].get<double>(), t[1].get<double>() - b[1].get<double>(), t[2].get<double>() - b[2].get<double>()};
+                IkResult ik = inverse_kinematics(r, q, target, 0.5);
+                json deg = json::array();
+                for (double v : ik.q) deg.push_back(v * 180.0 / std::numbers::pi);
+                write_response({{"id", id}, {"result", {{"q_deg", deg}, {"error_mm", ik.error_mm}, {"reached", ik.reached}, {"iterations", ik.iterations}}}});
             } else if (method == "ping") write_response({{"id", id}, {"result", "pong"}});
             else throw std::runtime_error("unknown method '" + method + "'");
         } catch (const std::exception& e) {

@@ -1,6 +1,8 @@
 "use client";
 
 import { DEFAULT_SETTINGS, type Settings } from "@/lib/settings";
+import { THEMES } from "@/lib/themes";
+import { click, SOUND_PACKS, setSoundPack, setVolume, type SoundPack } from "@/lib/audio";
 
 export default function SettingsDialog({ settings, onChange, onClose }: { settings: Settings; onChange: (p: Partial<Settings>) => void; onClose: () => void }) {
   const row = (label: string, hint: string, control: React.ReactNode) => (
@@ -66,8 +68,37 @@ export default function SettingsDialog({ settings, onChange, onClose }: { settin
           {row("Floor grid", "Reference grid under the part.", <input type="checkbox" checked={settings.grid} onChange={(e) => onChange({ grid: e.target.checked })} />)}
           {row("Annotations", "Centre-of-mass and finding labels in 3D.",
             <input type="checkbox" checked={settings.annotations} onChange={(e) => onChange({ annotations: e.target.checked })} />)}
-          <h3>Interface</h3>
-          {row("Sounds", "Subtle tones for clicks and completed checks.", <input type="checkbox" checked={settings.sound} onChange={(e) => onChange({ sound: e.target.checked })} />)}
+          <h3>Appearance</h3>
+          <div className="theme-grid" role="group" aria-label="Colour theme">
+            {THEMES.map((t) => (
+              <button key={t.key} className="theme-swatch" aria-pressed={settings.theme === t.key} onClick={() => onChange({ theme: t.key, accent: "" })}>
+                <span className="chips3"><i style={{ background: t.canvas }} /><i style={{ background: t.accent }} /><i style={{ background: t.accent2 }} /></span>
+                {t.label}
+              </button>
+            ))}
+          </div>
+          {row("Custom accent", "Overrides the theme's highlight colour.",
+            <span className="sound-row">
+              <input type="color" value={settings.accent || THEMES.find((t) => t.key === settings.theme)?.accent || "#4fd1c5"} onChange={(e) => onChange({ accent: e.target.value })} />
+              {settings.accent && <button className="btn" onClick={() => onChange({ accent: "" })}>Reset</button>}
+            </span>)}
+          <h3>Sound</h3>
+          {row("Sounds", "Tones for clicks and completed checks.", <input type="checkbox" checked={settings.sound} onChange={(e) => onChange({ sound: e.target.checked })} />)}
+          {row("Sound pack", SOUND_PACKS.find((p) => p.key === settings.soundPack)?.hint ?? "",
+            <span className="sound-row">
+              <select value={settings.soundPack} disabled={!settings.sound} onChange={(e) => {
+                const p = e.target.value as SoundPack;
+                setSoundPack(p);
+                click(220, 0.6);
+                onChange({ soundPack: p });
+              }}>
+                {SOUND_PACKS.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
+              </select>
+              <button className="btn" disabled={!settings.sound} onClick={() => click(220, 0.6)}>Preview</button>
+            </span>)}
+          {row("Volume", `${Math.round(settings.volume * 100)} %`,
+            <input type="range" min={0} max={1} step={0.05} value={settings.volume} disabled={!settings.sound}
+              onChange={(e) => { setVolume(Number(e.target.value)); onChange({ volume: Number(e.target.value) }); }} onPointerUp={() => click(220, 0.6)} />)}
           <h3>Manufacturing partner</h3>
           <div className="note">
             Live pricing and ordering through Xometry or Protolabs require a partner agreement and API credentials. Until one is

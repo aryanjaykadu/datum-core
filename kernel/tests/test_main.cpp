@@ -749,6 +749,43 @@ TEST(brake_disc_and_wheel_are_solid_parts) {
     CHECK(worst_lipschitz(wh, {-200, -200, -85}, {200, 200, 85}, 31) <= 1.0 + 1e-9, "wheel field is a bound");
 }
 
+TEST(feature_at_picks_the_feature_that_made_the_surface) {
+    json doc = {{"version", 1}, {"root", "drilled"}, {"features", json::array({
+        {{"id", "plate"}, {"type", "box"}, {"params", {{"size", {60, 40, 10}}}}},
+        {{"id", "boss"}, {"type", "cylinder"}, {"params", {{"radius", 8}, {"height", 20}, {"center", {20, 0, 10}}}}},
+        {{"id", "body"}, {"type", "union"}, {"inputs", {"plate", "boss"}}},
+        {{"id", "drilled"}, {"type", "hole"}, {"inputs", {"body"}}, {"params", {{"size", "M6"}, {"depth", 12}, {"center", {-15, 0, 5}}}}},
+    })}};
+    CHECK(feature_at(doc, {0, 0, 5}, 0.05) == "plate", "top face is the plate");
+    CHECK(feature_at(doc, {28, 0, 15}, 0.05) == "boss", "boss side is the boss");
+    CHECK(feature_at(doc, {-15 + 3.3, 0, 0}, 0.05) == "drilled", "hole wall is the hole");
+    CHECK(feature_at(doc, {100, 100, 100}, 0.05).empty(), "empty space picks nothing");
+}
+
+TEST(inverse_kinematics_reaches_points_and_stops_at_the_boundary) {
+    for (const char* key : {"ur5", "puma560"}) {
+        const Robot& r = robot_preset(key);
+        std::mt19937 rng(17);
+        std::uniform_real_distribution<double> u(0, 1);
+        int reached = 0;
+        for (int n = 0; n < 40; ++n) {
+            // a target the arm can reach: forward kinematics of a random in-limits pose
+            std::vector<double> q(r.joints.size());
+            for (size_t i = 0; i < q.size(); ++i) q[i] = r.joints[i].lo + (r.joints[i].hi - r.joints[i].lo) * u(rng);
+            Vec3 target = forward_kinematics(r, q).back().o;
+            std::vector<double> start(r.joints.size(), 0.3);
+            IkResult ik = inverse_kinematics(r, start, target, 0.5);
+            Vec3 got = forward_kinematics(r, ik.q).back().o;
+            for (size_t i = 0; i < ik.q.size(); ++i) CHECK(ik.q[i] >= r.joints[i].lo - 1e-9 && ik.q[i] <= r.joints[i].hi + 1e-9, "%s joint %zu within limits", key, i);
+            CHECK(std::abs(length(got - target) - ik.error_mm) < 1e-6, "%s reported error matches", key);
+            reached += ik.reached;
+        }
+        CHECK(reached >= 38, "%s reached %d of 40 random reachable targets", key, reached);
+        IkResult far = inverse_kinematics(r, std::vector<double>(r.joints.size(), 0.3), {5 * r.reach(), 0, 0}, 0.5);
+        CHECK(!far.reached && far.error_mm > 4 * r.reach() && far.error_mm < 5 * r.reach(), "%s stops near the boundary for an unreachable target (%g)", key, far.error_mm);
+    }
+}
+
 int main() {
     for (auto& t : registry()) {
         int before = failures;
