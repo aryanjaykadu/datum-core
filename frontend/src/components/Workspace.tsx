@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { click, reject, setSoundEnabled, setSoundPack, setVolume, validate } from "@/lib/audio";
-import { applyTheme, resolveTheme, viewportColours } from "@/lib/themes";
+import { applyTheme, glassTint, resolveTheme, viewportColours } from "@/lib/themes";
 import { deleteFeature, emptyDocument, History, insertFeature, updateFeature, type Operation } from "@/lib/document";
 import type { PickResult, Viewport } from "@/lib/gpu";
 import {
@@ -166,7 +166,7 @@ export default function Workspace() {
   useEffect(() => {
     const t = resolveTheme(settings.theme, settings.accent);
     applyTheme(t);
-    if (vp.current) (vp.current.colours = viewportColours(t), vp.current.request());
+    if (vp.current) (vp.current.colours = viewportColours(t), vp.current.glass.tint = glassTint(t), vp.current.request());
   }, [settings.theme, settings.accent]);
   // autosave a few seconds after each change while there are unsaved edits
   useEffect(() => {
@@ -560,7 +560,7 @@ export default function Workspace() {
         onToggle={(id) => patchFeature(id, { suppressed: !doc.features.find((f) => f.id === id)?.suppressed })} />
 
       <ViewportPanel insets={{ left: panels.tree ? 276 : 0, right: panels.inspector ? 346 : 0, top: 120, bottom: panels.dock ? 262 : 36 }}
-        onReady={(v) => { vp.current = v; v.colours = viewportColours(resolveTheme(settingsRef.current.theme, settingsRef.current.accent)); }} markers={markers} settings={settings} onSettings={updateSettings}
+        onReady={(v) => { vp.current = v; const t = resolveTheme(settingsRef.current.theme, settingsRef.current.accent); v.colours = viewportColours(t); v.glass.tint = glassTint(t); }} markers={markers} settings={settings} onSettings={updateSettings}
         onPickPoint={(hit) => {
           if (robotPick.current && rightTab === "robotics") return robotPick.current(hit.position);
           kernel.featureAt(hit.position).then((r) => {

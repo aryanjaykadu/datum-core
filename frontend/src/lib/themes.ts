@@ -61,6 +61,11 @@ export function applyTheme(t: Theme) {
   s.setProperty("--glass-rgb", t.glass);
 }
 
+/** Colour the liquid-glass panels are tinted towards (the theme's panel tint, 0..1). */
+export function glassTint(t: Theme): number[] {
+  return t.glass.split(",").map((v) => Number(v) / 255);
+}
+
 /** Viewport colours as linear-ish 0..1 triples for the shader. */
 export function viewportColours(t: Theme) {
   const f = (hex: string) => hexToRgb(hex).map((v) => v / 255) as [number, number, number];

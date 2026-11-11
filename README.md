@@ -71,6 +71,10 @@ cd src-tauri && cargo test --release                             # .datum encryp
 - The Performance preset (Settings → Viewport) uses the mesh all the time, without shadows, glass blur or animation: suited to integrated graphics.
 - Section, X-ray, normals and manufacturability views always use the exact field.
 
+## Live liquid glass (v1.5)
+
+Panels floating over the 3D view (title bar, ribbon, tree, inspector, dock, toolbar, status bar) are drawn by the viewport as liquid glass: they refract, frost and tint the live scene behind them as it moves. The refraction model is adapted from [liquid-glass-js](https://github.com/dashersw/liquid-glass-js) (MIT, see `THIRD_PARTY_NOTICES.md`) and runs as one GPU pass, so it costs well under a millisecond. Toggle it in Settings → Appearance; it is off on the Performance preset.
+
 ## Sketch and import
 
 - **Sketch → Extrude / Revolve**: edit the profile in the property panel (drag points, `+` to insert, per-point fillet radius). The profile becomes an exact signed-distance field.

@@ -1,6 +1,10 @@
 import { POINTS_WGSL } from "./pointShader";
 import { RAYMARCH_WGSL } from "./shader";
 import { MESH_WGSL } from "./meshShader";
+import { GLASS_WGSL, MAX_GLASS } from "./glassShader";
+
+/** A floating panel to draw as liquid glass, in CSS pixels relative to the canvas. */
+export interface GlassRect { x: number; y: number; w: number; h: number; radius: number; blur?: number; highlight?: number }
 import type { Vec3 } from "./ipc";
 
 export type DisplayMode = "shaded" | "cost" | "normals" | "xray" | "dfm";
@@ -50,6 +54,12 @@ export class Viewport {
   cloud = { visible: true, mode: 0 as 0 | 1, alpha: 0.16, voxel: 1, threshold: 0.05 };
 
   private anim = 0;
+  private sceneTex: GPUTexture | null = null;
+  private glassPipeline: GPURenderPipeline | null = null;
+  private glassUniform: GPUBuffer | null = null;
+  private glassSampler: GPUSampler | null = null;
+  /** Liquid glass panels over the view: on/off, where they are, and the theme tint. */
+  glass = { enabled: false, rects: (() => []) as () => GlassRect[], tint: [0.08, 0.086, 0.11] as number[], opacity: 0.62 };
   private meshPipeline: GPURenderPipeline | null = null;
   private meshVB: GPUBuffer | null = null;
   private meshIB: GPUBuffer | null = null;
@@ -432,6 +442,53 @@ export class Viewport {
     }
     this.request();
   }
+  private sceneTarget(): GPUTexture {
+    const w = this.canvas.width, h = this.canvas.height;
+    if (!this.sceneTex || this.sceneTex.width !== w || this.sceneTex.height !== h) {
+      this.sceneTex?.destroy();
+      this.sceneTex = this.device.createTexture({ size: [w, h], format: this.format, usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING });
+    }
+    return this.sceneTex;
+  }
+  /** One full-screen pass: copies the scene, and inside each panel refracts, frosts and tints it. */
+  private compositeGlass(enc: GPUCommandEncoder, rects: GlassRect[]) {
+    if (!this.glassPipeline) {
+      const module = this.device.createShaderModule({ code: GLASS_WGSL });
+      this.glassPipeline = this.device.createRenderPipeline({
+        layout: "auto",
+        vertex: { module, entryPoint: "vs" },
+        fragment: { module, entryPoint: "fs", targets: [{ format: this.format }] },
+        primitive: { topology: "triangle-list" },
+      });
+      this.glassUniform = this.device.createBuffer({ size: 64 + MAX_GLASS * 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+      this.glassSampler = this.device.createSampler({ magFilter: "linear", minFilter: "linear", addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge" });
+    }
+    const px = this.canvas.width / Math.max(this.canvas.clientWidth, 1);
+    const data = new Float32Array(16 + MAX_GLASS * 8);
+    data.set([rects.length, this.canvas.width, this.canvas.height, px], 0);
+    data.set([...this.glass.tint, this.glass.opacity], 4);
+    // liquid-glass-js defaults: edge 0.01, rim 0.05, base 0.01, corner 0.02 | edge 0.15, rim 0.8, base 0.1, ripple 0.1
+    data.set([0.01, 0.05, 0.01, 0.02], 8);
+    data.set([0.15 / px, 0.8 / px, 0.1 / px, 0.1], 12);
+    rects.forEach((r, i) => {
+      data.set([r.x * px, r.y * px, r.w * px, r.h * px], 16 + i * 4);
+      data.set([r.radius * px, r.blur ?? 5, r.highlight ?? 1, 0], 16 + MAX_GLASS * 4 + i * 4);
+    });
+    this.device.queue.writeBuffer(this.glassUniform!, 0, data);
+    const bind = this.device.createBindGroup({
+      layout: this.glassPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: this.sceneTex!.createView() },
+        { binding: 1, resource: this.glassSampler! },
+        { binding: 2, resource: { buffer: this.glassUniform! } },
+      ],
+    });
+    const pass = enc.beginRenderPass({ colorAttachments: [{ view: this.context.getCurrentTexture().createView(), loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 1 } }] });
+    pass.setPipeline(this.glassPipeline);
+    pass.setBindGroup(0, bind);
+    pass.draw(3);
+    pass.end();
+  }
   /** Whether the last frame was drawn from the mesh. */
   get usingMesh() {
     return this.meshFrame;
@@ -473,8 +530,11 @@ export class Viewport {
       this.depth?.destroy();
       this.depth = this.device.createTexture({ size: [this.canvas.width, this.canvas.height], format: "depth24plus", usage: GPUTextureUsage.RENDER_ATTACHMENT });
     }
+    // liquid glass: render the scene off-screen, then composite with the panels refracting it
+    const rects = this.glass.enabled ? this.glass.rects().slice(0, MAX_GLASS) : [];
+    const target = rects.length ? this.sceneTarget() : this.context.getCurrentTexture();
     const pass = enc.beginRenderPass({
-      colorAttachments: [{ view: this.context.getCurrentTexture().createView(), loadOp: "clear", storeOp: "store", clearValue: { r: 0.04, g: 0.05, b: 0.06, a: 1 } }],
+      colorAttachments: [{ view: target.createView(), loadOp: "clear", storeOp: "store", clearValue: { r: 0.04, g: 0.05, b: 0.06, a: 1 } }],
       depthStencilAttachment: { view: this.depth.createView(), depthClearValue: 1, depthLoadOp: "clear", depthStoreOp: "discard" },
     });
     pass.setPipeline(this.pipeline);
@@ -494,6 +554,7 @@ export class Viewport {
       pass.draw(6, this.cloudCount);
     }
     pass.end();
+    if (rects.length) this.compositeGlass(enc, rects);
     const t0 = performance.now();
     this.device.queue.submit([enc.finish()]);
     await this.device.queue.onSubmittedWorkDone();

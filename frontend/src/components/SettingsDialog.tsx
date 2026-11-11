@@ -77,6 +77,8 @@ export default function SettingsDialog({ settings, onChange, onClose }: { settin
               </button>
             ))}
           </div>
+          {row("Liquid glass", "Panels refract the live 3D view behind them. Off on the Performance preset.",
+            <input type="checkbox" checked={settings.liquidGlass} onChange={(e) => onChange({ liquidGlass: e.target.checked })} />)}
           {row("Custom accent", "Overrides the theme's highlight colour.",
             <span className="sound-row">
               <input type="color" value={settings.accent || THEMES.find((t) => t.key === settings.theme)?.accent || "#4fd1c5"} onChange={(e) => onChange({ accent: e.target.value })} />

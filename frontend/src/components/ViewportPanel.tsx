@@ -6,6 +6,23 @@ import { Viewport, type DisplayMode, type PickResult, type Section, type ViewNam
 import type { Vec3 } from "@/lib/ipc";
 import { fmtLen, type Settings } from "@/lib/settings";
 import ViewCube from "./ViewCube";
+import type { GlassRect } from "@/lib/gpu";
+
+/** Panels that float over the 3D view and are drawn as liquid glass by the viewport. */
+const GLASS_SELECTOR = ".area-title, .area-ribbon, .area-tree, .area-inspector, .area-dock, .area-status, .vp-toolbar, .section-slider, .dfm-legend, .measure-readout";
+function glassRects(canvas: HTMLCanvasElement): GlassRect[] {
+  const c = canvas.getBoundingClientRect();
+  const out: GlassRect[] = [];
+  document.querySelectorAll<HTMLElement>(GLASS_SELECTOR).forEach((el) => {
+    const r = el.getBoundingClientRect();
+    if (r.width < 4 || r.height < 4) return;
+    const cs = getComputedStyle(el);
+    if (cs.visibility === "hidden" || Number(cs.opacity) < 0.5 || cs.display === "none") return;
+    out.push({ x: r.left - c.left, y: r.top - c.top, w: r.width, h: r.height, radius: parseFloat(cs.borderTopLeftRadius) || 0,
+      blur: el.matches(".area-tree, .area-inspector, .area-dock") ? 6 : 4 });
+  });
+  return out;
+}
 
 export interface Marker { id: string; label: string; position: Vec3; tone: "teal" | "amber" | "fail" }
 
@@ -50,6 +67,7 @@ export default function ViewportPanel({ insets, onReady, markers, settings, onSe
       (window as unknown as { __datumViewport?: Viewport }).__datumViewport = v;
       v.setInsets(insets);
       v.setPerformance(settings.performance);
+      v.glass.rects = () => glassRects(canvasRef.current!);
       v.onFrame = (t) => {
         setMs(t);
         placeOverlays();
@@ -96,6 +114,25 @@ export default function ViewportPanel({ insets, onReady, markers, settings, onSe
   }, [mode, settings.grid, settings.orthographic, section]);
 
   useEffect(() => vpRef.current?.setPerformance(settings.performance), [settings.performance]);
+  // liquid glass: on with the setting, off on the Performance preset; redraw when panels move
+  useEffect(() => {
+    const v = vpRef.current;
+    const on = settings.liquidGlass && settings.performance !== "performance";
+    document.documentElement.classList.toggle("lg-live", on);
+    if (v) (v.glass.enabled = on, v.request());
+  }, [settings.liquidGlass, settings.performance, vpRef.current]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const redraw = () => vpRef.current?.request();
+    const ro = new ResizeObserver(redraw);
+    document.querySelectorAll(GLASS_SELECTOR).forEach((el) => ro.observe(el));
+    document.addEventListener("transitionend", redraw);
+    document.addEventListener("scroll", redraw, true);
+    return () => {
+      ro.disconnect();
+      document.removeEventListener("transitionend", redraw);
+      document.removeEventListener("scroll", redraw, true);
+    };
+  });
   useEffect(() => placeOverlays(), [markers, points]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     vpRef.current?.setInsets(insets);

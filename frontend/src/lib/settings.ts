@@ -20,13 +20,15 @@ export interface Settings {
   /** "" = the theme's own accent */
   accent: string;
   soundPack: "guitar" | "soft" | "mechanical" | "scifi" | "chiptune" | "marimba";
+  /** Panels refract the live 3D view (liquid glass). */
+  liquidGlass: boolean;
   volume: number;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
   units: "mm", quality: "draft", bricks: 24, sound: true, grid: true, annotations: true, orthographic: false, decimals: 2,
   performance: "auto", mode: "pro", workspace: "all",
-  theme: "midnight", accent: "", soundPack: "guitar", volume: 0.6,
+  theme: "midnight", accent: "", soundPack: "guitar", volume: 0.6, liquidGlass: true,
 };
 
 const KEY = "datum.settings.v1";

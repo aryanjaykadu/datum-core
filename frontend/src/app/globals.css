@@ -500,3 +500,15 @@ input[type="range"]:active::-webkit-slider-thumb { transform: scale(1.35, 1.15);
 .jog { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
 .jog-axis { display: flex; gap: 2px; }
 .jog-axis .btn { min-width: 38px; }
+
+/* ---- live liquid glass: the viewport draws these panels (refraction, frost, tint, rim light),
+   so their own backgrounds, blur and edge shading step aside */
+:root.lg-live :is(.area-title, .area-ribbon, .area-tree, .area-inspector, .area-dock, .area-status, .vp-toolbar, .section-slider, .dfm-legend, .measure-readout) {
+  background: transparent !important;
+  background-image: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  box-shadow: 0 18px 40px -16px rgba(0, 0, 0, 0.55) !important;
+  border-color: rgba(255, 255, 255, 0.07) !important;
+}
+:root.lg-live :is(.area-tree, .area-inspector, .area-dock, .area-ribbon) { text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35); }
